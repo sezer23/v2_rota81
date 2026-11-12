@@ -1,0 +1,1913 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tur & Rota Planlayıcı (AI Destekli)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .bg-dark-header { background-color: #1E1E1E; }
+    .sortable-ghost { opacity: 0.4; background-color: #fef3c7; border: 2px dashed #d97706; }
+    .sortable-drag { background-color: #ffffff; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body class="bg-neutral-100 text-neutral-800 font-sans min-h-screen flex flex-col">
+
+  <!-- Header / Navigation -->
+  <header class="bg-dark-header text-white sticky top-0 z-40 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center p-1.5 shadow overflow-hidden">
+          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="Logo" class="w-full h-full object-contain filter invert">
+        </div>
+        <div class="flex flex-col">
+          <div class="flex items-center gap-2">
+            <input type="text" id="main-tour-title" value="" placeholder="Tur Başlığını Giriniz..." oninput="saveToLocalStorage()" class="bg-transparent text-lg font-bold text-white border border-transparent hover:border-neutral-600 focus:border-amber-500 focus:bg-neutral-800 px-1 py-0.5 rounded outline-none transition w-64 sm:w-80" title="Tur başlığını değiştirmek için tıklayın">
+            <span class="bg-amber-800/60 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-600/40">Multi-Day + AI</span>
+          </div>
+          <span id="header-city-summary" class="text-[11px] text-neutral-400 px-1">Henüz gün eklenmedi</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="hidden xl:flex items-center gap-2 bg-neutral-800/80 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300">
+          <i class="fa-regular fa-clock text-amber-400"></i>
+          <span>Süre: <strong id="header-total-time" class="text-amber-400 font-bold">0 sa 0 dk</strong></span>
+          <span class="text-neutral-600">|</span>
+          <i class="fa-regular fa-calendar text-neutral-400"></i>
+          <span id="header-total-days">0 Gün</span>
+        </div>
+
+        <button onclick="setGeminiKey()" class="bg-indigo-900/60 hover:bg-indigo-900 text-indigo-200 text-xs font-semibold px-2.5 py-2 rounded-lg border border-indigo-800 transition flex items-center gap-1.5" title="Gemini API anahtarını gir / değiştir">
+          <i class="fa-solid fa-key"></i> Gemini Anahtarı
+        </button>
+
+        <button onclick="resetLocalStorageData()" class="bg-rose-900/60 hover:bg-rose-900 text-rose-200 text-xs font-semibold px-2.5 py-2 rounded-lg border border-rose-800 transition flex items-center gap-1.5" title="Hafızayı Sıfırla ve Temizle">
+          <i class="fa-solid fa-rotate-right"></i> Sıfırla
+        </button>
+
+        <button onclick="exportProject()" class="bg-neutral-800 hover:bg-neutral-700 text-amber-400 text-xs font-semibold px-2.5 py-2 rounded-lg border border-neutral-700 transition flex items-center gap-1.5" title="Rotayı Bilgisayara Kaydet (.json)">
+          <i class="fa-solid fa-download"></i> Arşivle
+        </button>
+
+        <input type="file" id="import-file" onchange="importProject(event)" class="hidden" accept=".json">
+        <button onclick="triggerFileInput('import-file')" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold px-2.5 py-2 rounded-lg border border-neutral-700 transition flex items-center gap-1.5" title="Kayıtlı .json Projesini Yükle">
+          <i class="fa-solid fa-upload"></i> Yükle
+        </button>
+
+        <input type="file" id="merge-file" onchange="mergeProject(event)" class="hidden" accept=".json">
+        <button onclick="triggerFileInput('merge-file')" class="bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold px-2.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow" title="Başka bir tur dosyası ile birleştir (Merge)">
+          <i class="fa-solid fa-code-merge"></i> Birleştir (Merge)
+        </button>
+
+        <button onclick="openCustomPlaceModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition flex items-center gap-1.5 shadow">
+          <i class="fa-solid fa-plus-circle"></i> + Durak / Konaklama Ekle
+        </button>
+        <button onclick="downloadPrintableReport()" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold px-3 py-2 rounded-lg border border-neutral-700 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-print"></i> PDF / Rapor
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- SOL PANEL: Mekan Kataloğu ve Şehir Filtreleri -->
+    <section class="lg:col-span-5 bg-white rounded-xl shadow-sm border border-neutral-200 p-4 flex flex-col h-[calc(100vh-120px)] sticky top-20">
+
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-base font-bold text-neutral-800 flex items-center gap-2">
+          <i class="fa-regular fa-compass text-amber-600"></i> Mekan Kataloğu
+        </h2>
+        <div class="flex items-center gap-2">
+          <span id="catalog-count-badge" class="text-xs bg-neutral-100 text-neutral-600 font-semibold px-2 py-0.5 rounded-full border border-neutral-200">0 yer</span>
+          <button onclick="openAddCityModal()" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 px-2 py-1 rounded font-semibold border border-amber-200">
+            + Şehir Ekle
+          </button>
+        </div>
+      </div>
+
+      <!-- Mesafe Ölçüm Durum Çubuğu -->
+      <div id="distance-measure-banner" class="hidden mb-2 p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-900 flex justify-between items-center">
+        <span id="distance-measure-status">Mesafe için 1. mekanı seçtiniz. 2. mekanı seçin.</span>
+        <button onclick="cancelDistanceMeasure()" class="text-indigo-600 hover:text-rose-600 font-bold ml-2">İptal</button>
+      </div>
+
+      <!-- Şehir Filtreleri -->
+      <div class="relative mb-3">
+        <div class="flex items-center justify-between border border-neutral-200 rounded-lg bg-neutral-50 px-3 py-2 cursor-pointer select-none" onclick="toggleCityDropdown()">
+          <div class="flex items-center gap-2 text-xs font-semibold text-neutral-700">
+            <i class="fa-solid fa-bars text-amber-600"></i>
+            <span>Şehir Filtresi: <strong id="active-city-label" class="text-amber-700">Tümü</strong></span>
+          </div>
+          <i class="fa-solid fa-chevron-down text-neutral-400 text-xs transition-transform" id="city-dropdown-icon"></i>
+        </div>
+
+        <div id="city-dropdown-menu" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg z-30 p-2 space-y-1">
+          <!-- JS ile Dolacak -->
+        </div>
+      </div>
+
+      <!-- Arama Kutusu -->
+      <div class="relative mb-3">
+        <input type="text" id="search-input" oninput="renderCatalog()" placeholder="Mekan, lezzet veya etiket ara..." class="w-full pl-8 pr-3 py-2 text-xs border border-neutral-200 rounded-lg focus:outline-none focus:border-amber-500 bg-neutral-50/50">
+        <i class="fa-solid fa-magnifying-glass text-neutral-400 absolute left-2.5 top-2.5 text-xs"></i>
+      </div>
+
+      <!-- Mekan Listesi -->
+      <div id="catalog-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+        <!-- JS ile Dolacak -->
+      </div>
+    </section>
+
+    <!-- SAĞ PANEL: Gün Gün İtinerary Oluşturucu -->
+    <section class="lg:col-span-7 flex flex-col gap-4">
+
+      <div class="bg-white rounded-xl shadow-sm border border-neutral-200 p-5 flex flex-col gap-4">
+
+        <div class="flex flex-wrap justify-between items-center gap-3">
+          <div>
+            <h2 class="text-base font-bold text-neutral-800 flex items-center gap-2">
+              <i class="fa-solid fa-timeline text-amber-600"></i> Günlük Gezi Programım (Itinerary)
+            </h2>
+            <p class="text-xs text-neutral-500">Mekanları gün gruplarına ekleyin veya günler arasında sürükleyip taşıyın.</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="addNewDay()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow transition flex items-center gap-1">
+              <i class="fa-solid fa-plus"></i> Yeni Gün Ekle
+            </button>
+            <button onclick="clearAllDays()" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-lg transition flex items-center gap-1">
+              <i class="fa-solid fa-trash-can"></i> Tümünü Temizle
+            </button>
+          </div>
+        </div>
+
+        <!-- Üst Özet Kartları Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3 bg-neutral-50/85 rounded-xl border border-neutral-200/80 text-center">
+          <div>
+            <span class="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">TOPLAM GÜN</span>
+            <div id="summary-total-days" class="text-sm font-black text-neutral-800 mt-0.5">0 Gün</div>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">TOPLAM DURAK</span>
+            <div id="summary-total-places" class="text-sm font-black text-amber-600 mt-0.5">0 Durak</div>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">TOPLAM ARAÇ YOLU</span>
+            <div id="summary-total-distance" class="text-sm font-black text-indigo-600 mt-0.5">0 km (0 dk)</div>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">TOPLAM YÜRÜYÜŞ</span>
+            <div id="summary-total-walking" class="text-sm font-black text-emerald-600 mt-0.5">0 dk</div>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">GENEL SÜRE</span>
+            <div id="summary-total-time" class="text-sm font-black text-amber-600 mt-0.5">0 sa 0 dk</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Günler Konteyneri -->
+      <div id="days-container" class="space-y-4">
+        <!-- JS ile Dolacak -->
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- MODAL: Gelişmiş Dinamik AI Rehber Paneli -->
+  <div id="ai-info-modal" class="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm hidden items-center justify-center z-[60] p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-neutral-200 relative max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-neutral-100 mb-4 sticky top-0 bg-white z-10">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shadow-md">
+            <i class="fa-solid fa-book-open-reader text-sm"></i>
+          </div>
+          <div>
+            <h3 id="ai-modal-title" class="text-sm font-bold text-neutral-900">Profesyonel Rehber Notları</h3>
+            <span class="text-[10px] text-amber-700 font-semibold uppercase tracking-wider">Gemini AI + Google Arama</span>
+          </div>
+        </div>
+        <button onclick="closeAiModal()" class="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 flex items-center justify-center transition">
+          <i class="fa-solid fa-xmark text-xs"></i>
+        </button>
+      </div>
+
+      <!-- İçerik Alanı -->
+      <div id="ai-modal-content" class="space-y-4 text-xs">
+        <!-- Dinamik Bilgiler -->
+      </div>
+
+      <div class="mt-6 pt-3 border-t border-neutral-100 flex justify-between items-center">
+        <span class="text-[10px] text-neutral-400 italic">Gemini 2.5 • Google Arama ile canlı bölge analizi</span>
+        <button onclick="closeAiModal()" class="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold shadow transition">Anladım, Kapat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Mesafe Sonucu -->
+  <div id="distance-result-modal" class="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl border border-neutral-200 text-center">
+      <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3 text-lg">
+        <i class="fa-solid fa-route"></i>
+      </div>
+      <h3 class="text-sm font-bold text-neutral-800 mb-1">Mesafe Ölçüm Sonucu</h3>
+      <div id="distance-modal-places" class="text-xs text-neutral-500 mb-4">Mekan 1 -> Mekan 2</div>
+
+      <div class="bg-neutral-50 p-3 rounded-xl border border-neutral-200 mb-4 grid grid-cols-2 gap-2 text-center">
+        <div>
+          <span class="text-[10px] uppercase font-bold text-neutral-400">Yol Mesafesi</span>
+          <div id="distance-modal-km" class="text-base font-black text-indigo-600 mt-0.5">0 km</div>
+        </div>
+        <div>
+          <span class="text-[10px] uppercase font-bold text-neutral-400">Tahmini Sürüş</span>
+          <div id="distance-modal-min" class="text-base font-black text-amber-600 mt-0.5">0 dk</div>
+        </div>
+      </div>
+
+      <button onclick="closeDistanceModal()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow">Kapat</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Canlı Arama Destekli Durak / Konaklama Ekle -->
+  <div id="custom-place-modal" class="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl border border-neutral-200 relative">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="text-base font-bold text-neutral-800 flex items-center gap-2">
+          <i class="fa-solid fa-location-dot text-amber-600"></i> Online Harita Arama & Durak/Konaklama Ekle
+        </h3>
+        <button onclick="previewCustomPlaceAi()" id="modal-ai-preview-btn" class="hidden text-xs bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold px-2.5 py-1.5 rounded-lg border border-amber-200 transition flex items-center gap-1.5 shadow-sm">
+          <i class="fa-solid fa-wand-magic-sparkles text-amber-600"></i> AI Bilgi Al
+        </button>
+      </div>
+      <div class="space-y-3 text-xs">
+
+        <!-- Tür Seçimi -->
+        <div class="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded-lg">
+          <button type="button" id="type-btn-durak" onclick="setPlaceModalType('durak')" class="py-1.5 font-bold rounded-md bg-white text-amber-700 shadow-sm transition">📍 Normal Durak</button>
+          <button type="button" id="type-btn-otel" onclick="setPlaceModalType('otel')" class="py-1.5 font-semibold rounded-md text-neutral-600 hover:text-neutral-900 transition">🏨 Konaklama</button>
+        </div>
+
+        <!-- Canlı Online Arama Inputu -->
+        <div class="relative">
+          <label class="block font-semibold mb-1 text-neutral-700" id="search-label-text">Canlı Harita / Yer Ara (Örn: Harran Evleri, Mardin Sokakları)</label>
+          <div class="relative">
+            <input type="text" id="maps-search-input" oninput="handleOnlineMapsSearch(this.value)" class="w-full pl-8 pr-8 py-2 border border-neutral-300 rounded-lg focus:border-amber-500 outline-none text-xs" placeholder="Mekan, restoran veya otel adı yazın...">
+            <i class="fa-solid fa-magnifying-glass text-neutral-400 absolute left-2.5 top-3 text-xs"></i>
+            <span id="search-loading-icon" class="hidden absolute right-2.5 top-3 text-amber-600"><i class="fa-solid fa-spinner fa-spin"></i></span>
+          </div>
+          <!-- Öneriler Açılır Kutusu -->
+          <div id="maps-suggestions-box" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-neutral-200 rounded-lg shadow-xl z-50 max-h-52 overflow-y-auto space-y-0.5 p-1">
+            <!-- Dinamik online sonuçlar -->
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold mb-1 text-neutral-700">Mekan / Tesis Adı</label>
+          <input type="text" id="custom-name" oninput="checkModalAiButton()" class="w-full border border-neutral-300 rounded-lg p-2 focus:border-amber-500 outline-none font-semibold text-neutral-800" placeholder="Seçilen konum adı...">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold mb-1 text-neutral-700">Şehir (Saf İsim)</label>
+            <select id="custom-city" class="w-full border border-neutral-300 rounded-lg p-2 focus:border-amber-500 outline-none">
+              <!-- JS ile Dolacak -->
+            </select>
+          </div>
+          <div id="duration-input-wrapper">
+            <label class="block font-semibold mb-1 text-neutral-700">Tahmini Süre (Dakika)</label>
+            <input type="number" id="custom-duration" value="60" min="10" step="10" class="w-full border border-neutral-300 rounded-lg p-2 focus:border-amber-500 outline-none">
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="font-semibold text-neutral-700">Etiket (#) (İsteğe Bağlı)</label>
+            <button type="button" onclick="addNewCategoryPrompt()" class="text-amber-600 hover:text-amber-700 font-bold text-[11px]">+ Yeni Etiket Ekle</button>
+          </div>
+          <select id="custom-category" class="w-full border border-neutral-300 rounded-lg p-2 focus:border-amber-500 outline-none">
+            <!-- JS ile Dolacak -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold mb-1 text-neutral-700">Açıklama, Not, Püf Nokta</label>
+          <textarea id="custom-tip" class="w-full border border-neutral-300 rounded-lg p-2 focus:border-amber-500 outline-none h-16" placeholder="Örn: Ziyaret notları, konaklama detayları"></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeCustomPlaceModal()" class="px-3 py-1.5 bg-neutral-200 rounded-lg text-xs font-semibold text-neutral-700">İptal</button>
+        <button onclick="saveCustomPlace()" class="px-4 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 shadow">Kaydet ve Ekle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- UYGULAMA MANTIĞI VE VERİLER -->
+  <script>
+    let cities = [];
+    let categories = [];
+    let catalogPlaces = [];
+    let days = [];
+
+    let activeCityFilter = 'Tümü';
+    let activeDayId = null;
+    let sortableInstances = [];
+    let catalogSortable = null;
+
+    let measureFirstPlace = null;
+    let selectedLat = 37.0662;
+    let lng_selected = 37.3781;
+    let searchTimeout = null;
+    let currentPlaceModalCategoryMode = 'durak';
+
+    // ---------- SABİT ETİKET SİSTEMİ ----------
+    const FIXED_TAGS = ['#müze', '#tarih', '#inanç', '#saray', '#restoran', '#otel', '#etkinlik',
+                        '#doğa', '#kale', '#antik-kent', '#çarşı', '#kafe', '#manzara'];
+
+    // Serbest/eski etiketleri sabit listeye eşler; eşleşme yoksa '' döner
+    function normalizeTag(tag) {
+      let t = String(tag || '').trim().toLocaleLowerCase('tr-TR').replace(/\s+/g, '-');
+      if (!t) return '';
+      if (!t.startsWith('#')) t = '#' + t;
+      if (FIXED_TAGS.includes(t)) return t;
+      const rules = [
+        [['otel', 'konaklama', 'pansiyon', 'resort'], '#otel'],
+        [['saray', 'köşk'], '#saray'],
+        [['müze'], '#müze'],
+        [['cami', 'türbe', 'kilise', 'manastır', 'sinagog', 'tapınak', 'dini', 'inanç'], '#inanç'],
+        [['restoran', 'lokanta', 'yemek', 'gastronomi', 'kebap'], '#restoran'],
+        [['kafe', 'cafe', 'kahve'], '#kafe'],
+        [['antik', 'ören', 'harabe'], '#antik-kent'],
+        [['kale', 'hisar'], '#kale'],
+        [['çarşı', 'pazar', 'bazaar', 'alışveriş'], '#çarşı'],
+        [['festival', 'konser', 'etkinlik'], '#etkinlik'],
+        [['manzara', 'seyir', 'teras'], '#manzara'],
+        [['doğa', 'park', 'şelale', 'göl', 'plaj', 'milli'], '#doğa'],
+        [['tarih', 'kültür', 'miras'], '#tarih']
+      ];
+      for (const [keys, target] of rules) {
+        if (keys.some(k => t.includes(k))) return target;
+      }
+      return '';
+    }
+
+    // Kayıtlı mekanlardaki eski/serbest etiketleri sabit listeye taşır
+    function migrateLegacyTags() {
+      const fix = p => {
+        if (!p || !p.category) return;
+        const raw = p.category.startsWith('#') ? p.category : '#' + p.category;
+        const n = normalizeTag(raw);
+        if (n && n !== raw) p.category = n;
+      };
+      catalogPlaces.forEach(fix);
+      days.forEach(d => (d.places || []).forEach(fix));
+      const customs = new Set();
+      categories.forEach(c => {
+        const raw = c.startsWith('#') ? c : '#' + c;
+        const final = normalizeTag(raw) || raw;
+        if (!FIXED_TAGS.includes(final)) customs.add(final);
+      });
+      categories = [...customs];
+    }
+
+    // Etiket açılır listesini: sabit etiketler + elle eklenenler şeklinde doldurur
+    function renderCategoryOptions() {
+      const catSelect = document.getElementById('custom-category');
+      let html = `<option value="">-- Etiket Seçilmedi --</option>`;
+      html += `<optgroup label="Hazır Etiketler">` + FIXED_TAGS.map(t => `<option value="${t}">${t}</option>`).join('') + `</optgroup>`;
+      const customs = [...new Set(categories.map(c => c.startsWith('#') ? c : '#' + c))].filter(c => !FIXED_TAGS.includes(c) && c !== '#konaklama');
+      if (customs.length) {
+        html += `<optgroup label="Elle Eklenenler">` + customs.map(t => `<option value="${t}">${t}</option>`).join('') + `</optgroup>`;
+      }
+      catSelect.innerHTML = html;
+      return catSelect;
+    }
+
+    function sanitizeCityName(rawCity) {
+      if (!rawCity) return 'Merkez';
+      let cleaned = rawCity
+        .replace(/il merkezi/gi, '')
+        .replace(/büyükşehir belediyesi/gi, '')
+        .replace(/belediyesi/gi, '')
+        .replace(/bölgesi/gi, '')
+        .replace(/ili/gi, '')
+        .replace(/ilçesi/gi, '')
+        .trim();
+
+      if (cleaned.length === 0) return 'Merkez';
+      return cleaned.charAt(0).toLocaleUpperCase('tr-TR') + cleaned.slice(1);
+    }
+
+    function getPlaceStyleInfo(tagText, nameStr = '') {
+      const lowerTag = (tagText || '').toLowerCase();
+      const lowerName = (nameStr || '').toLowerCase();
+
+      if (lowerTag.includes('konaklama') || lowerTag.includes('otel') || lowerName.includes('otel') || lowerName.includes('hotel') || lowerName.includes('resort')) {
+        return {
+          cardBorder: 'border-cyan-300 bg-cyan-50/20',
+          tagBg: 'text-cyan-700 bg-cyan-50 border-cyan-200',
+          tipBg: 'bg-cyan-50/70 border-cyan-200 text-cyan-900',
+          iconColor: 'text-cyan-600',
+          badgeText: '🏨 '
+        };
+      } else if (lowerTag.includes('restoran') || lowerTag.includes('lokanta') || lowerTag.includes('kafe') || lowerTag.includes('cafe') || lowerTag.includes('yemek') || lowerName.includes('restoran') || lowerName.includes('lokanta') || lowerName.includes('sofrası')) {
+        return {
+          cardBorder: 'border-orange-300 bg-orange-50/20',
+          tagBg: 'text-orange-700 bg-orange-50 border-orange-200',
+          tipBg: 'bg-orange-50/70 border-orange-200 text-orange-900',
+          iconColor: 'text-orange-600',
+          badgeText: '🍽️ '
+        };
+      } else {
+        return {
+          cardBorder: 'border-neutral-200/90 bg-white',
+          tagBg: 'text-indigo-700 bg-indigo-50 border-indigo-100',
+          tipBg: 'bg-amber-50/70 border-amber-200/60 text-amber-900',
+          iconColor: 'text-amber-600',
+          badgeText: ''
+        };
+      }
+    }
+
+    function saveToLocalStorage() {
+      const state = {
+        tourTitle: document.getElementById('main-tour-title').value,
+        cities: cities,
+        categories: categories,
+        catalogPlaces: catalogPlaces,
+        days: days,
+        activeCityFilter: activeCityFilter,
+        activeDayId: activeDayId
+      };
+      localStorage.setItem('gap_tour_planner_state', JSON.stringify(state));
+    }
+
+    function loadFromLocalStorage() {
+      const saved = localStorage.getItem('gap_tour_planner_state');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          document.getElementById('main-tour-title').value = parsed.tourTitle || "";
+          cities = parsed.cities || [];
+          categories = parsed.categories || [];
+          catalogPlaces = parsed.catalogPlaces || [];
+          days = parsed.days || [];
+          activeCityFilter = parsed.activeCityFilter || (cities.length > 0 ? cities[0] : 'Tümü');
+          activeDayId = parsed.activeDayId || (days.length > 0 ? days[0].id : null);
+          return true;
+        } catch (e) {
+          console.error("Kayıt okuma hatası:", e);
+        }
+      }
+      return false;
+    }
+
+    function resetLocalStorageData() {
+      if (confirm("Tüm şehirler, kategoriler, mekanlar ve kayıtlar tamamen silinecek. Fabrika ayarlarına dönülecek. Emin misiniz?\n(Gemini API anahtarınız ve AI önbelleği korunur.)")) {
+        localStorage.removeItem('gap_tour_planner_state');
+        cities = [];
+        categories = [];
+        catalogPlaces = [];
+        days = [];
+        activeCityFilter = 'Tümü';
+        activeDayId = null;
+        document.getElementById('main-tour-title').value = "";
+        renderCityTabs();
+        renderCatalog();
+        renderDays();
+        alert("Uygulama tamamen sıfırlandı ve temizlendi.");
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadFromLocalStorage();
+      migrateLegacyTags();
+      renderCityTabs();
+      renderCatalog();
+      renderDays();
+    });
+
+    function updateHeaderCitySummary() {
+      const summaryEl = document.getElementById('header-city-summary');
+      let usedCities = [];
+
+      days.forEach(day => {
+        day.places.forEach(place => {
+          if (place.city && !usedCities.includes(place.city)) {
+            usedCities.push(place.city);
+          }
+        });
+      });
+
+      if (usedCities.length > 0) {
+        summaryEl.innerText = usedCities.join(' • ');
+      } else {
+        summaryEl.innerText = 'Henüz gün eklenmedi';
+      }
+    }
+
+    function triggerFileInput(id) {
+      document.getElementById(id).click();
+    }
+
+    function minutesToTimeStr(totalMins) {
+      const h = Math.floor(totalMins / 60) % 24;
+      const m = totalMins % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    function timeStrToMinutes(timeStr) {
+      if (!timeStr || !timeStr.includes(':')) return 600;
+      const parts = timeStr.split(':');
+      const h = parseInt(parts[0]) || 0;
+      const m = parseInt(parts[1]) || 0;
+      return h * 60 + m;
+    }
+
+    function applyAutoAiDuration(mins) {
+      const durationInput = document.getElementById('custom-duration');
+      if (durationInput) {
+        durationInput.value = mins;
+      }
+    }
+
+    function applyAutoAiTag(tag) {
+      const formatted = normalizeTag(tag);
+      if (!formatted) return;
+      const catSelect = document.getElementById('custom-category');
+      if (catSelect && [...catSelect.options].some(o => o.value === formatted)) {
+        catSelect.value = formatted;
+      }
+    }
+
+    // =====================================================================
+    // GEMINI + GOOGLE ARAMA İLE GERÇEK ZAMANLI AI REHBER MOTORU
+    // =====================================================================
+    // Model adı Google tarafından sık değişebilir. Biri "kullanılamıyor" hatası verirse sıradakine geçilir.
+    // Hata alırsanız güncel adı https://ai.google.dev/gemini-api/docs/models adresinden kontrol edin.
+    const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash'];
+    let GEMINI_MODEL = GEMINI_MODELS[0];   // son başarılı model burada tutulur
+    const AI_CACHE_KEY = 'gap_ai_cache_v2';
+    const GEMINI_KEY_STORAGE = 'gap_gemini_key';
+
+    function getGeminiKey() { return localStorage.getItem(GEMINI_KEY_STORAGE) || ''; }
+
+    function setGeminiKey() {
+      const current = getGeminiKey();
+      const val = prompt(
+        "Gemini API anahtarınızı girin (https://aistudio.google.com/apikey adresinden ücretsiz alabilirsiniz).\n" +
+        "Anahtar yalnızca bu tarayıcıda saklanır.\nSilmek için boş bırakıp Tamam'a basın.",
+        current
+      );
+      if (val === null) return false;
+      if (val.trim() === '') localStorage.removeItem(GEMINI_KEY_STORAGE);
+      else localStorage.setItem(GEMINI_KEY_STORAGE, val.trim());
+      return val.trim() !== '';
+    }
+
+    function escHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function readAiCache() {
+      try { return JSON.parse(localStorage.getItem(AI_CACHE_KEY) || '{}'); } catch { return {}; }
+    }
+    function writeAiCache(key, data) {
+      const c = readAiCache(); c[key] = data;
+      try { localStorage.setItem(AI_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
+    }
+
+    // Modelin döndürdüğü metinden JSON'u güvenle ayıkla
+    function extractJson(text) {
+      const start = text.indexOf('{'), end = text.lastIndexOf('}');
+      if (start === -1 || end === -1) throw new Error('Yanıtta JSON bulunamadı');
+      return JSON.parse(text.slice(start, end + 1));
+    }
+
+    async function fetchGeminiGuideCore(placeName, city, useSearch) {
+      const apiKey = getGeminiKey();
+      const prompt = `Sen deneyimli bir Türkiye turizm rehberisin. ${useSearch ? "Google Arama'yı KULLANARAK" : "Bildiklerine dayanarak (Google Arama erişimin YOK)"} "${placeName}" (${city}, Türkiye) hakkında ${useSearch ? 'güncel ve GERÇEK bilgi topla' : 'doğru bilgi ver'}.
+
+Kurallar:
+- Bu mekâna/bölgeye ÖZGÜ yaz; genel geçer, her yere uyan cümleler kurma. Somut isimler, tarihler, yapılar, yerel lezzetler ver.
+- Ziyaretçi yorumlarını (Google Haritalar, Tripadvisor, gezi blogları, forumlar) araştır ve tekrar eden temaları özetle. Yorum uydurma; bulamazsan ilgili alana "Yeterli yorum verisi bulunamadı" yaz.
+- Puan/yorum sayısı bulursan "rating_note" alanına kaynağıyla yaz, bulamazsan boş bırak.
+- Mekân otel veya restoransa "story" alanında tesisin özelliklerini, "intro" alanında konumunu ve atmosferini anlat.
+- Türkçe yaz.
+- "tag" alanı için SADECE şu listeden TEK bir etiket seç, başka etiket uydurma: ${FIXED_TAGS.join(', ')}. Örnek: saraylar için #saray, camiler/türbeler için #inanç, müzeler için #müze.
+${useSearch ? '' : '- Arama yapamıyorsun: kesin puan veya yorum sayısı verme, rating_note boş kalsın; yorum alanlarında yalnızca emin olduğun yaygın temaları yaz, emin değilsen "Yeterli yorum verisi bulunamadı" yaz.'}
+
+SADECE şu JSON'u döndür (markdown, açıklama ekleme):
+{
+ "intro": "Bölgenin/mekânın 2-3 cümlelik tanıtımı",
+ "story": "Tarihçe ve kültürel bağlam (4-6 cümle, somut bilgilerle)",
+ "highlights": ["görülmesi gereken 3-5 somut detay"],
+ "positive_reviews": ["ziyaretçilerin en çok övdüğü 3-4 tema"],
+ "negative_reviews": ["ziyaretçilerin en çok şikayet ettiği 3-4 tema"],
+ "rating_note": "Örn: Google'da ~4.6/5 (12 bin yorum) — ya da boş",
+ "local_tip": "Pratik tavsiye: ulaşım, bilet, kıyafet, yakında yenecek yer",
+ "best_time": "En iyi ziyaret zamanı/saati",
+ "duration": 60,
+ "tag": "listeden tek etiket"
+}`;
+
+      // Önce son başarılı model, sonra diğerleri denenir
+      const tryOrder = [GEMINI_MODEL, ...GEMINI_MODELS.filter(m => m !== GEMINI_MODEL)];
+      let json = null, lastErr = null;
+
+      const isOverload = (status, msg) => [500, 502, 503, 504].includes(status) || /high demand|overloaded|unavailable|try again later/i.test(msg || '');
+
+      // Yoğunluk (503) hatasında kısa beklemeyle en fazla 3 tur denenir
+      for (let round = 0; round < 3 && !json; round++) {
+      if (round > 0) await new Promise(r => setTimeout(r, 3000 * round));
+      for (const model of tryOrder) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              ...(useSearch ? { tools: [{ google_search: {} }] } : {})
+            })
+          }
+        );
+
+        if (res.ok) { json = await res.json(); GEMINI_MODEL = model; break; }
+
+        let msg = `HTTP ${res.status}`;
+        try { const e = await res.json(); msg = e.error?.message || msg; } catch (e) {}
+        lastErr = new Error(msg); lastErr.status = res.status;
+
+        // Model bulunamadı / artık sunulmuyor ise sıradaki modeli dene, diğer hatalarda dur
+        // 429 (kota) hatasında da sıradaki modeli dene: her modelin kotası ayrı sayılır
+        const modelProblem = isOverload(res.status, msg) || res.status === 404 || (res.status === 429 && !useSearch) || /no longer available|not found|not supported|deprecated/i.test(msg);
+        if (!modelProblem) throw lastErr;
+      }
+      // Son hata yoğunluk değilse (örn. model yok) tekrar tur atmanın anlamı yok
+      if (!json && lastErr && !isOverload(lastErr.status, lastErr.message)) break;
+      }
+      if (!json) {
+        if (lastErr) lastErr.triedModels = tryOrder.join(', ');
+        throw lastErr || new Error('Hiçbir model yanıt vermedi');
+      }
+
+      const cand = json.candidates?.[0];
+      const text = (cand?.content?.parts || []).map(p => p.text || '').join('');
+      const data = extractJson(text);
+
+      const sources = (cand?.groundingMetadata?.groundingChunks || [])
+        .map(c => c.web).filter(Boolean)
+        .map(w => ({ title: w.title || w.uri, uri: w.uri }));
+      data.sources = sources.filter((s, i, a) => a.findIndex(x => x.uri === s.uri) === i).slice(0, 6);
+      return data;
+    }
+
+    // Önce Google Arama ile dener; kota (429) dolmuşsa aramasız yedek moda geçer ve bunu işaretler
+    async function fetchGeminiGuide(placeName, city) {
+      try {
+        return await fetchGeminiGuideCore(placeName, city, true);
+      } catch (err) {
+        if (err.status !== 429) throw err;
+        const data = await fetchGeminiGuideCore(placeName, city, false);
+        data.noSearch = true;
+        data.sources = [];
+        return data;
+      }
+    }
+
+    function listHtml(arr, icon, color) {
+      if (!Array.isArray(arr) || arr.length === 0) return `<p class="text-neutral-500">Veri bulunamadı.</p>`;
+      return `<ul class="space-y-1.5">${arr.map(x =>
+        `<li class="flex gap-2"><i class="fa-solid ${icon} ${color} mt-0.5"></i><span>${escHtml(x)}</span></li>`).join('')}</ul>`;
+    }
+
+    async function openGeminiAiModal(placeName, city, forceRefresh = false) {
+      const modal = document.getElementById('ai-info-modal');
+      const titleEl = document.getElementById('ai-modal-title');
+      const contentEl = document.getElementById('ai-modal-content');
+
+      titleEl.innerText = `${placeName} (${city}) - Rehber Notları`;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      if (!getGeminiKey()) {
+        if (!setGeminiKey()) {
+          contentEl.innerHTML = `<p class="text-center py-8 text-neutral-500">AI rehber için Gemini API anahtarı gerekli. Üstteki <b>Gemini Anahtarı</b> butonundan ekleyebilirsiniz.</p>`;
+          return;
+        }
+      }
+
+      const safeName = placeName.replace(/'/g, "\\'"), safeCity = city.replace(/'/g, "\\'");
+      const cacheKey = `${placeName}|${city}`.toLowerCase();
+      let data = forceRefresh ? null : readAiCache()[cacheKey];
+      const fromCache = !!data;
+
+      if (!data) {
+        contentEl.innerHTML = `
+          <div class="py-10 text-center space-y-2">
+            <i class="fa-solid fa-spinner fa-spin text-2xl text-amber-600"></i>
+            <p class="text-neutral-500 font-medium">"${escHtml(placeName)}" için Google'da araştırma yapılıyor, yorumlar toplanıyor...</p>
+            <p class="text-[10px] text-neutral-400">Bu işlem 10-25 saniye sürebilir.</p>
+          </div>`;
+        try {
+          data = await fetchGeminiGuide(placeName, city);
+          writeAiCache(cacheKey, data);
+        } catch (err) {
+          console.error('Gemini hatası:', err);
+          let hint = err.message;
+          if (err.status === 400 || err.status === 403) hint = 'API anahtarı geçersiz ya da yetkisiz olabilir. Anahtarı yenileyin. (' + err.message + ')';
+          if (err.status === 503 || /high demand|overloaded/i.test(err.message)) hint = 'Google sunucuları şu an yoğun (503). Otomatik olarak 3 tur denendi. Bu geçici bir durum, 1-2 dakika sonra tekrar deneyin. Kotanızla ilgili bir sorun değil.';
+          if (err.status === 429) hint = 'Kota/istek sınırı aşıldı (denenen modeller: ' + (err.triedModels || GEMINI_MODEL) + '). Google\'ın yanıtı: ' + err.message + ' — Ücretsiz katmanda Google Arama (grounding) kotası çok düşük veya sıfır olabilir. https://aistudio.google.com adresinde Usage/Rate limit bölümünü kontrol edin; gerekirse projeye faturalandırma ekleyin ya da 1 dakika bekleyip tekrar deneyin.';
+          contentEl.innerHTML = `
+            <div class="text-center py-6 space-y-3">
+              <p class="text-rose-600 font-semibold">AI içeriği oluşturulamadı</p>
+              <p class="text-neutral-500">${escHtml(hint)}</p>
+              <button onclick="openGeminiAiModal('${safeName}','${safeCity}', true)" class="px-3 py-1.5 bg-amber-600 text-white rounded-lg font-bold">Tekrar Dene</button>
+              <button onclick="setGeminiKey()" class="px-3 py-1.5 bg-neutral-200 text-neutral-700 rounded-lg font-bold">Anahtarı Değiştir</button>
+            </div>`;
+          return;
+        }
+      }
+
+      // "Yeni Durak" formu açıksa süre ve etiketi forma işle
+      const formOpen = !document.getElementById('custom-place-modal').classList.contains('hidden');
+      if (formOpen) {
+        if (data.duration) applyAutoAiDuration(parseInt(data.duration) || 60);
+        if (data.tag) applyAutoAiTag(String(data.tag));
+      }
+
+      contentEl.innerHTML = `
+        <div class="space-y-4">
+          ${data.noSearch ? `<div class="p-2.5 bg-yellow-50 border border-yellow-300 rounded-lg text-yellow-900"><strong><i class="fa-solid fa-triangle-exclamation"></i> Google Arama kotası dolu.</strong> Bu içerik canlı aramadan değil modelin kendi bilgisinden üretildi; yorum özetleri doğrulanmamıştır. Kota yenilenince "Yeniden Üret" ile gerçek yorumlarla güncelleyebilirsiniz.</div>` : ''}
+          <div class="p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50 border border-amber-200/80 rounded-xl grid grid-cols-3 gap-3 items-center">
+            <div><span class="text-[10px] uppercase font-bold text-amber-800 block mb-0.5">⏱️ Süre</span><span class="text-sm font-black text-amber-900">${escHtml(data.duration || 60)} dk</span></div>
+            <div><span class="text-[10px] uppercase font-bold text-indigo-800 block mb-0.5">🏷️ Etiket</span><span class="text-xs font-bold text-indigo-700">${escHtml(normalizeTag(data.tag) || '-')}</span></div>
+            <div><span class="text-[10px] uppercase font-bold text-neutral-700 block mb-0.5">🕒 En İyi Zaman</span><span class="text-xs font-semibold text-neutral-800">${escHtml(data.best_time || '-')}</span></div>
+          </div>
+
+          <div class="p-3.5 bg-amber-50/70 border border-amber-200/60 rounded-xl">
+            <span class="text-[10px] uppercase font-bold text-amber-800 block mb-1">📍 Tanıtım</span>
+            <p class="text-neutral-700 leading-relaxed">${escHtml(data.intro)}</p>
+          </div>
+
+          <div class="p-3.5 bg-indigo-50/70 border border-indigo-200/60 rounded-xl">
+            <span class="text-[10px] uppercase font-bold text-indigo-800 block mb-1">📜 Tarih & Kültür</span>
+            <p class="text-indigo-950 leading-relaxed">${escHtml(data.story)}</p>
+            ${Array.isArray(data.highlights) && data.highlights.length ? `<div class="mt-3 pt-3 border-t border-indigo-200/60"><span class="text-[10px] uppercase font-bold text-indigo-800 block mb-1.5">✨ Mutlaka Görün</span>${listHtml(data.highlights, 'fa-star', 'text-indigo-500')}</div>` : ''}
+          </div>
+
+          <div class="p-3.5 bg-neutral-50 border border-neutral-200 rounded-xl space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] uppercase font-bold text-neutral-700">⭐ Ziyaretçi Yorumları (Özet)</span>
+              ${data.rating_note ? `<span class="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">${escHtml(data.rating_note)}</span>` : ''}
+            </div>
+            <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <strong class="text-emerald-800 block mb-1.5"><i class="fa-solid fa-thumbs-up"></i> Olumlu Yorumlar</strong>
+              ${listHtml(data.positive_reviews, 'fa-circle-check', 'text-emerald-600')}
+            </div>
+            <div class="p-2.5 bg-rose-50 border border-rose-200 rounded-lg">
+              <strong class="text-rose-800 block mb-1.5"><i class="fa-solid fa-thumbs-down"></i> Olumsuz Yorumlar</strong>
+              ${listHtml(data.negative_reviews, 'fa-circle-xmark', 'text-rose-600')}
+            </div>
+            <div class="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+              <strong class="text-amber-800 block mb-1"><i class="fa-solid fa-lightbulb"></i> Yerel Tavsiye</strong>
+              <p>${escHtml(data.local_tip)}</p>
+            </div>
+          </div>
+
+          ${data.sources && data.sources.length ? `
+            <div class="text-[10px] text-neutral-500">
+              <span class="font-bold uppercase">Kaynaklar:</span>
+              ${data.sources.map(s => `<a href="${escHtml(s.uri)}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline mr-2">${escHtml(s.title)}</a>`).join('')}
+            </div>` : ''}
+
+          <div class="flex items-center justify-between text-[10px] text-neutral-400">
+            <span>${fromCache ? 'Kayıtlı sonuç (önbellek)' : 'Şimdi üretildi'} • ${GEMINI_MODEL}${data.noSearch ? ' (aramasız)' : ' + Google Arama'}</span>
+            <button onclick="openGeminiAiModal('${safeName}','${safeCity}', true)" class="text-amber-700 font-bold hover:underline"><i class="fa-solid fa-rotate"></i> Yeniden Üret</button>
+          </div>
+        </div>`;
+    }
+
+    function closeAiModal() {
+      const modal = document.getElementById('ai-info-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function checkModalAiButton() {
+      const name = document.getElementById('custom-name').value.trim();
+      const btn = document.getElementById('modal-ai-preview-btn');
+      if (name.length > 2 && currentPlaceModalCategoryMode === 'durak') {
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
+
+    function previewCustomPlaceAi() {
+      const name = document.getElementById('custom-name').value.trim();
+      const city = document.getElementById('custom-city').value || 'Merkez';
+      if (!name) return;
+      openGeminiAiModal(name, city);
+    }
+
+    // =====================================================================
+    // ROTA / SÜRE HESAPLARI
+    // =====================================================================
+    function calculateTransitBetween(p1, p2) {
+      if (!p1 || !p2 || !p1.lat || !p1.lng || !p2.lat || !p2.lng) {
+        return { km: 2, min: 5, walkMin: 15, isWalkingOnly: false };
+      }
+      const lat1 = p1.lat, lon1 = p1.lng, lat2 = p2.lat, lon2 = p2.lng;
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      let roadKm = parseFloat((R * c * 1.35).toFixed(1));
+      if (roadKm < 0.5) roadKm = 0.5;
+
+      if (roadKm <= 1.5) {
+        const walkMinutes = Math.max(5, Math.round((roadKm * 1000) / 75));
+        return { km: 0, min: 0, walkMin: walkMinutes, isWalkingOnly: true };
+      } else {
+        const driveMins = Math.max(3, Math.round((roadKm / 50) * 60));
+        return { km: Math.round(roadKm), min: driveMins, walkMin: 0, isWalkingOnly: false };
+      }
+    }
+
+    function ensureDayTransits(day) {
+      if (!day.transits) day.transits = [];
+      for (let i = 0; i < day.places.length - 1; i++) {
+        if (!day.transits[i] || (day.transits[i].km === 0 && day.transits[i].min === 0 && day.transits[i].walkMin === 0)) {
+          day.transits[i] = calculateTransitBetween(day.places[i], day.places[i+1]);
+        }
+      }
+    }
+
+    function calculateDayTimes(day) {
+      ensureDayTransits(day);
+      let times = [];
+      let currentMins = 600;
+
+      day.places.forEach((place, idx) => {
+        if (day.customTimes && day.customTimes[idx]) {
+          currentMins = timeStrToMinutes(day.customTimes[idx]);
+        }
+        times[idx] = minutesToTimeStr(currentMins);
+
+        let visitDuration = parseInt(place.duration || 0);
+        let transitDuration = 0;
+        if (day.transits && day.transits[idx]) {
+          const t = day.transits[idx];
+          if (t.isWalkingOnly) {
+            transitDuration = parseInt(t.walkMin || 0);
+          } else {
+            transitDuration = parseInt(t.min || 0) + parseInt(t.walkMin || 0);
+          }
+        }
+        currentMins += visitDuration + transitDuration;
+      });
+      return times;
+    }
+
+    function toggleCityDropdown() {
+      const menu = document.getElementById('city-dropdown-menu');
+      const icon = document.getElementById('city-dropdown-icon');
+      menu.classList.toggle('hidden');
+      icon.classList.toggle('rotate-180');
+    }
+
+    function renderCityTabs() {
+      const container = document.getElementById('city-dropdown-menu');
+      document.getElementById('active-city-label').innerText = activeCityFilter;
+
+      let html = `
+        <div onclick="filterCity('Tümü')" class="flex items-center justify-between px-3 py-2 text-xs rounded-lg cursor-pointer transition ${activeCityFilter === 'Tümü' ? 'bg-amber-50 text-amber-800 font-bold' : 'hover:bg-neutral-100 text-neutral-700'}">
+          <span>Tümü</span>
+          ${activeCityFilter === 'Tümü' ? '<i class="fa-solid fa-check text-amber-600"></i>' : ''}
+        </div>
+      `;
+
+      cities.forEach(city => {
+        const isActive = activeCityFilter === city;
+        html += `
+          <div class="flex items-center justify-between px-3 py-2 text-xs rounded-lg transition ${isActive ? 'bg-amber-50 text-amber-800 font-bold' : 'hover:bg-neutral-100 text-neutral-700'}">
+            <span onclick="filterCity('${city}')" class="flex-1 cursor-pointer">${city}</span>
+            <div class="flex items-center gap-2">
+              ${isActive ? '<i class="fa-solid fa-check text-amber-600 mr-1"></i>' : ''}
+              <button onclick="event.stopPropagation(); deleteCity('${city}')" class="text-neutral-400 hover:text-rose-600 p-1" title="${city} şehrini sil">
+                <i class="fa-solid fa-trash-can text-[11px]"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function filterCity(city) {
+      activeCityFilter = city;
+      renderCityTabs();
+      renderCatalog();
+      toggleCityDropdown();
+      saveToLocalStorage();
+    }
+
+    function deleteCity(cityName) {
+      if (confirm(`"${cityName}" şehrini ve katalogdaki tüm bu şehre ait mekanları silmek istediğinize emin misiniz?`)) {
+        cities = cities.filter(c => c !== cityName);
+        catalogPlaces = catalogPlaces.filter(p => p.city !== cityName);
+        if (activeCityFilter === cityName) activeCityFilter = cities.length > 0 ? cities[0] : 'Tümü';
+        renderCityTabs();
+        renderCatalog();
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function setActiveDay(dayId) {
+      activeDayId = dayId;
+      renderDays();
+      saveToLocalStorage();
+    }
+
+    function handleMeasureDistance(placeId) {
+      const place = catalogPlaces.find(p => p.id === placeId);
+      if (!place) return;
+
+      const banner = document.getElementById('distance-measure-banner');
+      const statusText = document.getElementById('distance-measure-status');
+
+      if (!measureFirstPlace) {
+        measureFirstPlace = place;
+        banner.classList.remove('hidden');
+        statusText.innerHTML = `<strong>1. Mekan:</strong> ${place.name}. Şimdi 2. mekanı seçin.`;
+      } else {
+        if (measureFirstPlace.id === place.id) {
+          alert("Aynı mekanı seçtiniz. Lütfen farklı bir ikinci mekan seçin.");
+          return;
+        }
+        const lat1 = measureFirstPlace.lat || 37.0, lon1 = measureFirstPlace.lng || 37.0;
+        const lat2 = place.lat || 37.0, lon2 = place.lng || 37.0;
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        let roadKm = Math.round(R * c * 1.35);
+        if (roadKm < 1) roadKm = 2;
+        const driveMins = Math.max(3, Math.round((roadKm / 65) * 60));
+
+        document.getElementById('distance-modal-places').innerText = `${measureFirstPlace.name} ➔ ${place.name}`;
+        document.getElementById('distance-modal-km').innerText = `${roadKm} km`;
+        document.getElementById('distance-modal-min').innerText = `${driveMins} dk`;
+        document.getElementById('distance-result-modal').classList.remove('hidden');
+        document.getElementById('distance-result-modal').classList.add('flex');
+        cancelDistanceMeasure();
+      }
+    }
+
+    function cancelDistanceMeasure() {
+      measureFirstPlace = null;
+      document.getElementById('distance-measure-banner').classList.add('hidden');
+    }
+
+    function closeDistanceModal() {
+      document.getElementById('distance-result-modal').classList.add('hidden');
+      document.getElementById('distance-result-modal').classList.remove('flex');
+    }
+
+    function renderCatalog() {
+      const listEl = document.getElementById('catalog-list');
+      const searchVal = document.getElementById('search-input').value.toLowerCase();
+
+      let filtered = catalogPlaces.filter(item => {
+        const matchCity = activeCityFilter === 'Tümü' || item.city === activeCityFilter;
+        const matchSearch = item.name.toLowerCase().includes(searchVal) ||
+                            (item.tip && item.tip.toLowerCase().includes(searchVal)) ||
+                            (item.category && item.category.toLowerCase().includes(searchVal));
+        return matchCity && matchSearch;
+      });
+
+      document.getElementById('catalog-count-badge').innerText = `${filtered.length} yer`;
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<p class="text-xs text-neutral-400 text-center py-8">Mekan bulunamadı veya henüz katalog boş.</p>`;
+        return;
+      }
+
+      let html = '';
+      filtered.forEach(place => {
+        const tagText = place.category ? (place.category.startsWith('#') ? place.category : '#' + place.category) : '';
+        const isSelectedForMeasure = measureFirstPlace && measureFirstPlace.id === place.id;
+        const styleInfo = getPlaceStyleInfo(tagText, place.name);
+        const isHotelOrRestoran = styleInfo.badgeText !== '';
+
+        html += `
+          <div data-catalog-id="${place.id}" class="p-3 bg-white border ${isSelectedForMeasure ? 'border-indigo-500 ring-2 ring-indigo-500/20' : styleInfo.cardBorder} rounded-xl hover:border-amber-500 shadow-sm transition flex flex-col justify-between gap-2.5 relative group">
+            <div>
+              <div class="flex justify-between items-start gap-2">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/70 cursor-pointer hover:opacity-80" ondblclick="editCatalogCity('${place.id}')" title="Şehri değiştirmek için çift tıklayın">${place.city}</span>
+                  ${tagText ? `<span ondblclick="editCatalogCategory('${place.id}')" class="text-[10px] ${styleInfo.tagBg} px-2 py-0.5 rounded font-semibold border cursor-pointer hover:opacity-80 transition" title="Etiketi değiştirmek için çift tıklayın">${tagText}</span>` : ''}
+                </div>
+
+                <div class="flex items-center gap-1">
+                  ${!isHotelOrRestoran || styleInfo.badgeText === '🍽️ ' ? `
+                    <button onclick="openGeminiAiModal('${place.name.replace(/'/g, "\\'")}', '${place.city.replace(/'/g, "\\'")}')" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg px-2 py-1.5 transition flex items-center gap-1 border border-amber-200" title="Rehber Notları & Hikaye">
+                      <i class="fa-solid fa-book-open-reader text-amber-600"></i> Rehber Notu
+                    </button>
+                  ` : ''}
+
+                  <button onclick="handleMeasureDistance('${place.id}')" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg px-2 py-1.5 transition flex items-center gap-1 border border-indigo-200" title="Mesafe ölç">
+                    <i class="fa-solid fa-ruler"></i> Mesafe
+                  </button>
+
+                  <button onclick="deleteCatalogPlace('${place.id}')" class="text-neutral-400 hover:text-rose-600 p-1 text-xs transition" title="Sil">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+
+                  <button onclick="addPlaceToActiveDay('${place.id}')" class="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg px-2.5 py-1.5 transition flex items-center gap-1 shadow-sm" title="Aktif güne ekle">
+                    <i class="fa-solid fa-plus"></i> Ekle
+                  </button>
+                </div>
+              </div>
+
+              <h4 ondblclick="editCatalogTitle('${place.id}')" class="text-xs font-bold text-neutral-900 mt-2 cursor-pointer hover:text-amber-600 transition" title="Düzenlemek için çift tıklayın">${styleInfo.badgeText}${place.name}</h4>
+
+              <div class="text-[11px] text-neutral-500 mt-1 flex items-center gap-1">
+                ${!isHotelOrRestoran || styleInfo.badgeText === '🍽️ ' ? `<i class="fa-regular fa-clock text-amber-600"></i> ${place.duration} dk` : `<span class="text-cyan-700 font-semibold">Konaklama Tesisi</span>`}
+                ${place.lat && place.lng ? `<span class="text-[10px] text-neutral-400 ml-2 font-mono">(${place.lat.toFixed(3)}, ${place.lng.toFixed(3)})</span>` : ''}
+              </div>
+            </div>
+
+            <div ondblclick="editCatalogTip('${place.id}')" class="p-2 ${styleInfo.tipBg} border rounded-lg text-[11px] flex items-start gap-1.5 leading-snug cursor-pointer transition" title="Notu düzenlemek için çift tıklayın">
+              <i class="fa-regular fa-lightbulb ${styleInfo.iconColor} mt-0.5 text-xs"></i>
+              <span>${place.tip || 'Not eklemek için çift tıklayın...'}</span>
+            </div>
+          </div>
+        `;
+      });
+      listEl.innerHTML = html;
+
+      if (catalogSortable) catalogSortable.destroy();
+      catalogSortable = new Sortable(listEl, {
+        group: { name: 'itinerary', pull: 'clone', put: false },
+        sort: false,
+        animation: 150
+      });
+    }
+
+    function editCatalogCity(placeId) {
+      const place = catalogPlaces.find(p => p.id === placeId);
+      if (!place) return;
+      const input = prompt("Bu mekanın bağlı olduğu şehri (il) yazın:", place.city || "");
+      if (input === null || input.trim() === "") return;
+      const newCity = sanitizeCityName(input);
+      place.city = newCity;
+      if (!cities.includes(newCity)) cities.push(newCity);
+      // Günlere eklenmiş kopyaları da güncelle
+      days.forEach(d => d.places.forEach(p => { if (p.id === placeId || p.id.startsWith(placeId + '-')) p.city = newCity; }));
+      renderCityTabs();
+      renderCatalog();
+      renderDays();
+      saveToLocalStorage();
+    }
+
+    function editCatalogTitle(placeId) {
+      const place = catalogPlaces.find(p => p.id === placeId);
+      if (!place) return;
+      const newName = prompt("Mekan başlığını düzenleyin:", place.name);
+      if (newName !== null && newName.trim() !== "") {
+        place.name = newName.trim();
+        renderCatalog();
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function editCatalogTip(placeId) {
+      const place = catalogPlaces.find(p => p.id === placeId);
+      if (!place) return;
+      const newTip = prompt("Açıklama / Not / Püf Nokta düzenleyin:", place.tip || "");
+      if (newTip !== null) {
+        place.tip = newTip.trim();
+        renderCatalog();
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function editCatalogCategory(placeId) {
+      const place = catalogPlaces.find(p => p.id === placeId);
+      if (!place) return;
+      const menu = FIXED_TAGS.map((t, i) => `${i + 1}) ${t}`).join('\n');
+      const input = prompt(`Etiket seçmek için numara yazın ya da elle bir etiket girin:\n\n${menu}\n\nMevcut: ${place.category || '-'}`, place.category || '');
+      if (input === null) return;
+      let val = input.trim();
+      if (/^\d+$/.test(val)) {
+        const t = FIXED_TAGS[parseInt(val, 10) - 1];
+        if (!t) { alert('Geçersiz numara.'); return; }
+        val = t;
+      } else if (val !== '' && !val.startsWith('#')) {
+        val = '#' + val;
+      }
+      place.category = val;
+      if (val !== '' && !FIXED_TAGS.includes(val) && !categories.includes(val)) categories.push(val);
+      renderCatalog();
+      renderDays();
+      saveToLocalStorage();
+    }
+
+    function deleteCatalogPlace(placeId) {
+      if (confirm("Bu mekanı katalogdan tamamen silmek istediğinize emin misiniz?")) {
+        catalogPlaces = catalogPlaces.filter(p => p.id !== placeId);
+        renderCatalog();
+        saveToLocalStorage();
+      }
+    }
+
+    function renderDays() {
+      const container = document.getElementById('days-container');
+      container.innerHTML = '';
+
+      sortableInstances.forEach(inst => inst.destroy());
+      sortableInstances = [];
+
+      if (days.length === 0) {
+        activeDayId = null;
+        container.innerHTML = `
+          <div class="bg-white rounded-xl border border-neutral-200 p-8 text-center text-neutral-400 text-xs">
+            <i class="fa-solid fa-calendar-xmark text-2xl mb-2 text-neutral-300"></i>
+            <p>Henüz eklenmiş bir gün bulunmuyor. Üst plandan "Yeni Gün Ekle" butonuna basarak rota oluşturmaya başlayın ya da kataloğdan ekleme yapın.</p>
+          </div>
+        `;
+        calculateTotals();
+        updateHeaderCitySummary();
+        saveToLocalStorage();
+        return;
+      }
+
+      if (!activeDayId || !days.some(d => d.id === activeDayId)) {
+        activeDayId = days[0].id;
+      }
+
+      days.forEach((day, index) => {
+        ensureDayTransits(day);
+        if (!day.customTimes) day.customTimes = {};
+
+        const isActive = day.id === activeDayId;
+
+        let dayPlacesDuration = day.places.reduce((acc, curr) => acc + parseInt(curr.duration || 0), 0);
+        let dayTransitDuration = 0;
+        let dayTransitKm = 0;
+        let dayWalkingMinutes = 0;
+
+        if (day.transits) {
+          day.transits.forEach(t => {
+            if (!t.isWalkingOnly) {
+              dayTransitKm += parseInt(t.km || 0);
+              dayTransitDuration += parseInt(t.min || 0);
+            }
+            dayWalkingMinutes += parseInt(t.walkMin || 0);
+          });
+        }
+        let dayTotalDuration = dayPlacesDuration + dayTransitDuration + dayWalkingMinutes;
+        const dayHours = Math.floor(dayTotalDuration / 60);
+        const dayMins = dayTotalDuration % 60;
+
+        const calculatedTimes = calculateDayTimes(day);
+
+        const dayEl = document.createElement('div');
+        dayEl.className = `bg-white rounded-xl shadow-sm border transition cursor-pointer ${isActive ? 'border-2 border-amber-500 shadow-md ring-2 ring-amber-500/10' : 'border-neutral-200 hover:border-neutral-300'}`;
+        dayEl.onclick = (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('input')) return;
+          setActiveDay(day.id);
+        };
+
+        let placesHtml = '';
+        if (day.places.length === 0) {
+          placesHtml = `
+            <div class="text-center py-4 text-neutral-400 text-xs">
+              <i class="fa-solid fa-turn-down text-neutral-300 text-base mb-1"></i>
+              <p>Bu güne henüz mekan eklenmedi. Kataloğdan "+ Ekle" butonuna basın veya buraya sürükleyin.</p>
+            </div>
+          `;
+        } else {
+          day.places.forEach((place, pIdx) => {
+            const currentTime = calculatedTimes[pIdx] || "10:00";
+            const tagText = place.category ? (place.category.startsWith('#') ? place.category : '#' + place.category) : '';
+            const styleInfo = getPlaceStyleInfo(tagText, place.name);
+            const isHotel = styleInfo.badgeText === '🏨 ';
+
+            placesHtml += `
+              <div data-place-id="${place.id}" class="bg-white p-3 rounded-xl border ${styleInfo.cardBorder} shadow-sm flex items-center justify-between gap-3 group hover:border-amber-400 transition">
+                <div class="flex items-center gap-2 cursor-grab active:cursor-grabbing text-neutral-300 hover:text-amber-600">
+                  <i class="fa-solid fa-grip-vertical"></i>
+                </div>
+
+                <div class="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg" title="Başlangıç Saati">
+                  <i class="fa-regular fa-clock text-amber-600 text-xs"></i>
+                  <input type="text" maxlength="5" value="${currentTime}" onchange="updateCustomTime('${day.id}', ${pIdx}, this.value)" placeholder="10:00" class="w-12 text-xs font-bold text-amber-800 bg-transparent outline-none text-center">
+                </div>
+
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-[9px] uppercase font-bold text-neutral-500 bg-neutral-100 px-1.5 py-0.5 rounded">${place.city}</span>
+                    ${tagText ? `<span class="text-[9px] ${styleInfo.tagBg} px-1.5 py-0.5 rounded font-semibold border">${tagText}</span>` : ''}
+                    <h5 class="text-xs font-bold text-neutral-800">${styleInfo.badgeText}${place.name}</h5>
+                  </div>
+                  ${place.tip ? `<p class="text-[10px] ${styleInfo.iconColor} mt-0.5 flex items-center gap-1"><i class="fa-regular fa-lightbulb ${styleInfo.iconColor}"></i> ${place.tip}</p>` : ''}
+                </div>
+
+                <div class="flex items-center gap-2">
+                  ${!isHotel ? `
+                    <button onclick="openGeminiAiModal('${place.name.replace(/'/g, "\\'")}', '${place.city.replace(/'/g, "\\'")}')" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg px-2.5 py-1.5 transition flex items-center gap-1 border border-amber-200" title="Rehber Notu">
+                      <i class="fa-solid fa-book-open-reader text-amber-600"></i> AI
+                    </button>
+                    <input type="number" value="${place.duration}" min="5" step="5" onchange="updatePlaceDuration('${day.id}', ${pIdx}, this.value)" class="w-14 text-xs border border-neutral-300 rounded-lg px-1.5 py-1 text-center font-semibold focus:border-amber-500 outline-none" title="Ziyaret Süresi">
+                    <span class="text-[10px] font-semibold text-neutral-500">dk</span>
+                  ` : `
+                    <span class="text-xs font-bold text-cyan-700 px-2">Konaklama</span>
+                  `}
+
+                  <button onclick="removePlaceFromDay('${day.id}', ${pIdx})" class="text-neutral-300 hover:text-rose-600 ml-1 text-xs" title="Çıkar">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              </div>
+            `;
+
+            if (pIdx < day.places.length - 1) {
+              const transit = day.transits[pIdx] || { km: 0, min: 0, walkMin: 0, isWalkingOnly: false };
+              const isWalk = transit.isWalkingOnly;
+              placesHtml += `
+                <div class="my-1.5 px-3 py-1.5 bg-neutral-100/80 border border-dashed border-neutral-300 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600">
+                  <div class="flex items-center gap-2 font-medium">
+                    <i class="fa-solid fa-route text-indigo-600"></i>
+                    <span>Geçiş / Transfer:</span>
+                  </div>
+                  <div class="flex items-center gap-3 flex-wrap">
+                    <label class="flex items-center gap-1.5 cursor-pointer bg-white px-2 py-1 rounded border border-neutral-200 select-none text-[11px] font-semibold text-emerald-700">
+                      <input type="checkbox" ${isWalk ? 'checked' : ''} onchange="updateTransit('${day.id}', ${pIdx}, 'isWalkingOnly', this.checked)" class="rounded text-emerald-600 focus:ring-emerald-500">
+                      <span>Yalnızca Yürüyüş</span>
+                    </label>
+
+                    <div class="flex items-center gap-1 ${isWalk ? 'opacity-40 pointer-events-none' : ''}">
+                      <i class="fa-solid fa-car-side text-indigo-600 text-[11px]"></i>
+                      <input type="number" value="${transit.km}" min="0" step="1" ${isWalk ? 'disabled' : ''} onchange="updateTransit('${day.id}', ${pIdx}, 'km', this.value)" class="w-11 text-center bg-white border border-neutral-300 rounded px-1 py-0.5 font-bold text-neutral-800 outline-none">
+                      <span class="text-[10px] text-neutral-500 font-semibold">km</span>
+                    </div>
+                    <div class="flex items-center gap-1 ${isWalk ? 'opacity-40 pointer-events-none' : ''}">
+                      <input type="number" value="${transit.min}" min="0" step="5" ${isWalk ? 'disabled' : ''} onchange="updateTransit('${day.id}', ${pIdx}, 'min', this.value)" class="w-11 text-center bg-white border border-neutral-300 rounded px-1 py-0.5 font-bold text-indigo-700 outline-none">
+                      <span class="text-[10px] text-neutral-500 font-semibold">dk araç</span>
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                      <i class="fa-solid fa-person-walking text-emerald-600 text-[11px]"></i>
+                      <input type="number" value="${transit.walkMin || 0}" min="0" step="5" onchange="updateTransit('${day.id}', ${pIdx}, 'walkMin', this.value)" class="w-11 text-center bg-white border border-neutral-300 rounded px-1 py-0.5 font-bold text-emerald-700 outline-none">
+                      <span class="text-[10px] text-neutral-500 font-semibold">dk yürüme</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+          });
+        }
+
+        dayEl.innerHTML = `
+          <div class="p-4">
+            <div class="flex justify-between items-center mb-3 pb-2 border-b border-neutral-100 flex-wrap gap-2">
+              <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+                <span class="${isActive ? 'bg-amber-600 text-white' : 'bg-neutral-200 text-neutral-700'} font-black text-xs px-2.5 py-1 rounded-lg uppercase tracking-wider transition">${index + 1}. GÜN</span>
+                <input type="text" value="${day.title}" onchange="updateDayTitle('${day.id}', this.value)" class="text-sm font-bold text-neutral-800 focus:bg-neutral-50 px-1.5 py-0.5 rounded border border-transparent focus:border-neutral-300 outline-none flex-1">
+                ${isActive ? '<span class="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">Aktif Gün</span>' : ''}
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100">🚗 ${dayTransitKm} km (${dayTransitDuration} dk)</span>
+                <span class="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-indigo-100">🚶 ${dayWalkingMinutes} dk yürüme</span>
+                <span class="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/80 flex items-center gap-1"><i class="fa-regular fa-clock"></i> ${dayHours > 0 ? dayHours + ' sa ' : ''}${dayMins} dk</span>
+                <button onclick="removeDay('${day.id}')" class="text-neutral-300 hover:text-rose-600 text-xs transition ml-1" title="Günü Sil"><i class="fa-solid fa-trash-can"></i></button>
+              </div>
+            </div>
+            <div id="day-list-${day.id}" data-day-id="${day.id}" class="space-y-1 min-h-[90px] p-2 bg-neutral-50/50 rounded-xl border border-dashed border-neutral-200 flex flex-col justify-center">
+              ${placesHtml}
+            </div>
+          </div>
+        `;
+
+        container.appendChild(dayEl);
+
+        const sortableEl = document.getElementById(`day-list-${day.id}`);
+        const sortable = new Sortable(sortableEl, {
+          group: 'itinerary',
+          animation: 150,
+          ghostClass: 'sortable-ghost',
+          dragClass: 'sortable-drag',
+          draggable: '[data-place-id]',
+          onAdd: function (evt) {
+            setActiveDay(day.id);
+            const catalogId = evt.item.getAttribute('data-catalog-id');
+            if (catalogId) {
+              const orig = catalogPlaces.find(p => p.id === catalogId);
+              if (orig) {
+                const targetDayId = evt.to.getAttribute('data-day-id');
+                const targetDay = days.find(d => d.id === targetDayId);
+                if (targetDay) {
+                  const newPlace = { ...orig, id: orig.id + '-' + Date.now() };
+                  targetDay.places.splice(evt.newIndex, 0, newPlace);
+                  evt.item.remove();
+                  if (targetDay.title === 'Yeni Gün' && targetDay.places.length > 0) {
+                    targetDay.title = targetDay.places[0].city;
+                  }
+                  renderDays();
+                  renderCatalog();
+                  saveToLocalStorage();
+                  return;
+                }
+              }
+            }
+            reorderPlaces();
+          },
+          onEnd: function () {
+            reorderPlaces();
+          }
+        });
+        sortableInstances.push(sortable);
+      });
+
+      calculateTotals();
+      updateHeaderCitySummary();
+      saveToLocalStorage();
+    }
+
+    function updateCustomTime(dayId, index, timeVal) {
+      const day = days.find(d => d.id === dayId);
+      if (day) {
+        if (!day.customTimes) day.customTimes = {};
+        let cleaned = timeVal.replace('.', ':').trim();
+        if (/^\d{4}$/.test(cleaned)) cleaned = cleaned.slice(0, 2) + ':' + cleaned.slice(2);
+        day.customTimes[index] = cleaned;
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function updateTransit(dayId, index, key, value) {
+      const day = days.find(d => d.id === dayId);
+      if (day) {
+        if (!day.transits[index]) day.transits[index] = { km: 0, min: 0, walkMin: 0, isWalkingOnly: false };
+        if (key === 'isWalkingOnly') {
+          day.transits[index][key] = value;
+          if (value) { day.transits[index].km = 0; day.transits[index].min = 0; }
+        } else {
+          day.transits[index][key] = parseInt(value || 0);
+        }
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function reorderPlaces() {
+      const newDays = [];
+      days.forEach(day => {
+        const dayEl = document.getElementById(`day-list-${day.id}`);
+        const placeEls = dayEl.querySelectorAll('[data-place-id]');
+        const newPlaces = [];
+
+        placeEls.forEach(el => {
+          const placeId = el.getAttribute('data-place-id');
+          let foundPlace = null;
+          days.forEach(d => {
+            const match = d.places.find(p => p.id === placeId);
+            if (match) foundPlace = match;
+          });
+          if (foundPlace) newPlaces.push(foundPlace);
+        });
+
+        const newTransits = [];
+        for (let i = 0; i < newPlaces.length - 1; i++) {
+          newTransits.push(calculateTransitBetween(newPlaces[i], newPlaces[i+1]));
+        }
+        newDays.push({ ...day, places: newPlaces, transits: newTransits, customTimes: {} });
+      });
+
+      days = newDays;
+      renderDays();
+      saveToLocalStorage();
+    }
+
+    function calculateTotals() {
+      let totalMins = 0, totalPlacesCount = 0, totalKm = 0, totalTransitMins = 0, totalWalkingMins = 0;
+
+      days.forEach(day => {
+        totalPlacesCount += day.places.length;
+        day.places.forEach(place => { totalMins += parseInt(place.duration || 0); });
+        if (day.transits) {
+          day.transits.forEach(t => {
+            if (!t.isWalkingOnly) {
+              totalKm += parseInt(t.km || 0);
+              totalTransitMins += parseInt(t.min || 0);
+              totalMins += parseInt(t.min || 0);
+            }
+            totalWalkingMins += parseInt(t.walkMin || 0);
+            totalMins += parseInt(t.walkMin || 0);
+          });
+        }
+      });
+
+      const hours = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const timeStr = `${hours} sa ${mins} dk`;
+
+      document.getElementById('header-total-time').innerText = timeStr;
+      document.getElementById('header-total-days').innerText = `${days.length} Gün`;
+      document.getElementById('summary-total-days').innerText = `${days.length} Gün`;
+      document.getElementById('summary-total-places').innerText = `${totalPlacesCount} Durak`;
+      document.getElementById('summary-total-distance').innerText = `${totalKm} km (${totalTransitMins} dk)`;
+      document.getElementById('summary-total-walking').innerText = `${totalWalkingMins} dk`;
+      document.getElementById('summary-total-time').innerText = timeStr;
+    }
+
+    function addNewDay() {
+      const newId = 'day-' + Date.now();
+      const newDay = { id: newId, title: 'Yeni Gün', places: [], transits: [], customTimes: {} };
+      days.push(newDay);
+      activeDayId = newId;
+      renderDays();
+      renderCatalog();
+      saveToLocalStorage();
+      return newDay;
+    }
+
+    function clearAllDays() {
+      if (days.length === 0) { alert("Program zaten boş."); return; }
+      if (confirm("Gezi programındaki tüm günleri ve yerleri silmek istediğinize emin misiniz?")) {
+        days = [];
+        activeDayId = null;
+        renderDays();
+        renderCatalog();
+        saveToLocalStorage();
+      }
+    }
+
+    function removeDay(dayId) {
+      days = days.filter(d => d.id !== dayId);
+      if (activeDayId === dayId) activeDayId = days.length > 0 ? days[0].id : null;
+      renderDays();
+      renderCatalog();
+      saveToLocalStorage();
+    }
+
+    function updateDayTitle(dayId, newTitle) {
+      const day = days.find(d => d.id === dayId);
+      if (day) { day.title = newTitle; saveToLocalStorage(); }
+    }
+
+    function addPlaceToActiveDay(placeId) {
+      if (days.length === 0) addNewDay();
+      let targetDay = days.find(d => d.id === activeDayId) || days[0];
+      const place = catalogPlaces.find(p => p.id === placeId);
+
+      if (place && targetDay) {
+        targetDay.places.push({ ...place, id: place.id + '-' + Date.now() });
+        ensureDayTransits(targetDay);
+        if (targetDay.title === 'Yeni Gün' && targetDay.places.length === 1) {
+          targetDay.title = place.city;
+        }
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function removePlaceFromDay(dayId, placeIdx) {
+      const day = days.find(d => d.id === dayId);
+      if (day) {
+        day.places.splice(placeIdx, 1);
+        if (day.transits && day.transits.length > 0) day.transits.splice(Math.max(0, placeIdx - 1), 1);
+        if (day.customTimes) delete day.customTimes[placeIdx];
+        ensureDayTransits(day);
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function updatePlaceDuration(dayId, placeIdx, newDuration) {
+      const day = days.find(d => d.id === dayId);
+      if (day && day.places[placeIdx]) {
+        day.places[placeIdx].duration = parseInt(newDuration || 0);
+        renderDays();
+        saveToLocalStorage();
+      }
+    }
+
+    function setPlaceModalType(mode) {
+      currentPlaceModalCategoryMode = mode;
+      const btnDurak = document.getElementById('type-btn-durak');
+      const btnOtel = document.getElementById('type-btn-otel');
+      const durationWrapper = document.getElementById('duration-input-wrapper');
+      const searchLabelText = document.getElementById('search-label-text');
+      const aiBtn = document.getElementById('modal-ai-preview-btn');
+      const catSelect = document.getElementById('custom-category');
+
+      if (mode === 'otel') {
+        btnOtel.className = "py-1.5 font-bold rounded-md bg-cyan-600 text-white shadow-sm transition";
+        btnDurak.className = "py-1.5 font-semibold rounded-md text-neutral-600 hover:text-neutral-900 transition";
+        durationWrapper.style.display = 'none';
+        searchLabelText.innerText = "Konaklama Tesisi Ara (Örn: Novotel Konya, Hilton...)";
+        aiBtn.classList.add('hidden');
+        catSelect.value = "#otel";
+      } else {
+        btnDurak.className = "py-1.5 font-bold rounded-md bg-white text-amber-700 shadow-sm transition";
+        btnOtel.className = "py-1.5 font-semibold rounded-md text-neutral-600 hover:text-neutral-900 transition";
+        durationWrapper.style.display = 'block';
+        searchLabelText.innerText = "Canlı Harita / Yer Ara (Örn: Harran Evleri, Mardin Sokakları)";
+        checkModalAiButton();
+      }
+    }
+
+    function openCustomPlaceModal() {
+      setPlaceModalType('durak');
+
+      const citySelect = document.getElementById('custom-city');
+      let orderedCities = [...cities];
+      if (activeCityFilter !== 'Tümü' && orderedCities.includes(activeCityFilter)) {
+        orderedCities = [activeCityFilter, ...orderedCities.filter(c => c !== activeCityFilter)];
+      }
+      citySelect.innerHTML = orderedCities.map(c => `<option value="${c}">${c}</option>`).join('');
+
+      const catSelect = renderCategoryOptions();
+
+      document.getElementById('maps-search-input').value = '';
+      document.getElementById('custom-name').value = '';
+      document.getElementById('custom-tip').value = '';
+      document.getElementById('maps-suggestions-box').classList.add('hidden');
+      document.getElementById('modal-ai-preview-btn').classList.add('hidden');
+
+      selectedLat = 37.0662;
+      lng_selected = 37.3781;
+
+      document.getElementById('custom-place-modal').classList.remove('hidden');
+      document.getElementById('custom-place-modal').classList.add('flex');
+    }
+
+    function closeCustomPlaceModal() {
+      document.getElementById('custom-place-modal').classList.add('hidden');
+      document.getElementById('custom-place-modal').classList.remove('flex');
+    }
+
+    // Sonucun bağlı olduğu İL'i bulur (ilçe/mahalle değil). Örn: Mevlana Müzesi -> Konya
+    function detectProvince(item) {
+      const a = item.address || {};
+      let province = a.province || '';
+
+      // Türkiye'de 'state' çoğu zaman bölge adıdır (İç Anadolu Bölgesi); yalnızca bölge değilse kullan
+      if (!province && a.state && !/bölge/i.test(a.state)) province = a.state;
+
+      // Yedek: adres metninden, posta kodu/bölge/ülke dışındaki SON parçayı il kabul et
+      if (!province) {
+        const parts = String(item.display_name || '').split(',').map(s => s.trim()).filter(Boolean);
+        const cleanParts = parts.filter(s => !/^\d{4,5}$/.test(s) && !/bölge/i.test(s) && !/^türkiye$/i.test(s));
+        if (cleanParts.length > 0) province = cleanParts[cleanParts.length - 1];
+        else province = a.city || a.town || '';
+      }
+      return sanitizeCityName(province || 'Merkez');
+    }
+
+    function handleOnlineMapsSearch(query) {
+      const cleanQuery = query.trim();
+      const box = document.getElementById('maps-suggestions-box');
+      const loader = document.getElementById('search-loading-icon');
+
+      if (searchTimeout) clearTimeout(searchTimeout);
+
+      if (cleanQuery.length < 2) {
+        box.classList.add('hidden');
+        loader.classList.add('hidden');
+        return;
+      }
+
+      loader.classList.remove('hidden');
+
+      searchTimeout = setTimeout(() => {
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}&countrycodes=tr&limit=10&addressdetails=1&accept-language=tr`, {
+          headers: { 'Accept-Language': 'tr' }
+        })
+        .then(res => res.json())
+        .then(data => {
+          loader.classList.add('hidden');
+          if (!data || data.length === 0) {
+            box.innerHTML = `<div class="p-2 text-neutral-400 text-center text-xs">Sonuç bulunamadı</div>`;
+            box.classList.remove('hidden');
+            return;
+          }
+
+          let html = '';
+          data.forEach(item => {
+            const displayName = item.display_name;
+            const shortTitle = displayName.split(',')[0];
+            const detectedCity = detectProvince(item);
+
+            html += `
+              <div onclick="selectOnlineSuggestion('${shortTitle.replace(/'/g, "\\'")}', '${detectedCity.replace(/'/g, "\\'")}', ${item.lat}, ${item.lon})" class="p-2 hover:bg-amber-50 rounded cursor-pointer transition flex justify-between items-center text-xs border-b border-neutral-100 last:border-0">
+                <div class="pr-2">
+                  <div class="font-bold text-neutral-800"><i class="fa-solid fa-location-dot ${currentPlaceModalCategoryMode === 'otel' ? 'text-cyan-600' : 'text-amber-600'} mr-1"></i> ${shortTitle} <span class="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded ml-1 font-semibold">${detectedCity}</span></div>
+                  <div class="text-[10px] text-neutral-500 truncate max-w-[280px]">${displayName}</div>
+                </div>
+                <span class="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold shrink-0">Seç</span>
+              </div>
+            `;
+          });
+          box.innerHTML = html;
+          box.classList.remove('hidden');
+        })
+        .catch(err => {
+          loader.classList.add('hidden');
+          console.error("Arama hatası:", err);
+        });
+      }, 250);
+    }
+
+    function selectOnlineSuggestion(name, city, lat, lng) {
+      document.getElementById('custom-name').value = name;
+      document.getElementById('maps-search-input').value = name;
+      selectedLat = parseFloat(lat);
+      lng_selected = parseFloat(lng);
+
+      const cleanCity = sanitizeCityName(city);
+      if (cleanCity && !cities.includes(cleanCity)) {
+        cities.push(cleanCity);
+        renderCityTabs();
+      }
+
+      const citySelect = document.getElementById('custom-city');
+      let found = false;
+      for (let i = 0; i < citySelect.options.length; i++) {
+        if (citySelect.options[i].value.toLowerCase() === cleanCity.toLowerCase()) {
+          citySelect.selectedIndex = i;
+          found = true;
+          break;
+        }
+      }
+      if (!found && cleanCity) {
+        const opt = document.createElement('option');
+        opt.value = cleanCity;
+        opt.innerHTML = cleanCity;
+        citySelect.appendChild(opt);
+        citySelect.value = cleanCity;
+      }
+
+      document.getElementById('maps-suggestions-box').classList.add('hidden');
+      if (currentPlaceModalCategoryMode === 'durak') {
+        document.getElementById('modal-ai-preview-btn').classList.remove('hidden');
+      }
+    }
+
+    function addNewCategoryPrompt() {
+      const newCat = prompt("Eklemek istediğiniz yeni etiketi giriniz (Örn: #müze, #restoran):");
+      if (newCat && newCat.trim() !== "") {
+        let formatted = newCat.trim();
+        if (!formatted.startsWith('#')) formatted = '#' + formatted;
+        if (!categories.includes(formatted)) categories.push(formatted);
+
+        const catSelect = renderCategoryOptions();
+        catSelect.value = formatted;
+        saveToLocalStorage();
+      }
+    }
+
+    function saveCustomPlace() {
+      const name = document.getElementById('custom-name').value.trim();
+      const city = sanitizeCityName(document.getElementById('custom-city').value);
+      const duration = currentPlaceModalCategoryMode === 'otel' ? 0 : parseInt(document.getElementById('custom-duration').value || 60);
+      let category = document.getElementById('custom-category').value;
+      const tip = document.getElementById('custom-tip').value.trim();
+
+      if (!name) {
+        alert("Lütfen haritadan aratıp seçiniz veya isim giriniz.");
+        return;
+      }
+
+      if (currentPlaceModalCategoryMode === 'otel') category = '#otel';
+      if (category && category !== "" && !category.startsWith('#')) category = '#' + category;
+
+      const newPlace = {
+        id: (currentPlaceModalCategoryMode === 'otel' ? 'hotel-' : 'custom-') + Date.now(),
+        city: city,
+        category: category || '',
+        name: name,
+        duration: duration,
+        tip: tip || (currentPlaceModalCategoryMode === 'otel' ? 'Konaklama tesisi' : ''),
+        lat: selectedLat,
+        lng: lng_selected
+      };
+
+      catalogPlaces.unshift(newPlace);
+      renderCatalog();
+      closeCustomPlaceModal();
+      saveToLocalStorage();
+    }
+
+    function openAddCityModal() {
+      const newCity = prompt("Eklemek istediğiniz yeni Şehir adını giriniz:");
+      if (newCity && newCity.trim() !== "") {
+        const formatted = sanitizeCityName(newCity);
+        if (!cities.includes(formatted)) {
+          cities.push(formatted);
+          renderCityTabs();
+          filterCity(formatted);
+          saveToLocalStorage();
+        }
+      }
+    }
+
+    function exportProject() {
+      const projectData = {
+        title: document.getElementById('main-tour-title').value,
+        cities: cities,
+        categories: categories,
+        days: days,
+        catalogPlaces: catalogPlaces
+      };
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projectData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `${(projectData.title || 'tur_rotasi').replace(/\s+/g, '_')}_arsiv.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    function importProject(event) {
+      const fileReader = new FileReader();
+      if (event.target.files[0]) {
+        fileReader.readAsText(event.target.files[0], "UTF-8");
+        fileReader.onload = function (e) {
+          try {
+            const imported = JSON.parse(e.target.result);
+            if (imported.title !== undefined) document.getElementById('main-tour-title').value = imported.title;
+            if (imported.cities) cities = imported.cities.map(c => sanitizeCityName(c));
+            if (imported.categories) categories = imported.categories;
+            if (imported.days) days = imported.days;
+            if (imported.catalogPlaces) catalogPlaces = imported.catalogPlaces;
+            if (days.length > 0) activeDayId = days[0].id;
+            renderCityTabs();
+            renderCatalog();
+            renderDays();
+            saveToLocalStorage();
+            migrateLegacyTags(); renderCatalog(); renderDays(); saveToLocalStorage();
+            alert("Proje arşivi başarıyla yüklendi!");
+          } catch (err) {
+            alert("Geçersiz veya bozuk dosya formatı!");
+          }
+        };
+      }
+    }
+
+    function mergeProject(event) {
+      const fileReader = new FileReader();
+      if (event.target.files[0]) {
+        fileReader.readAsText(event.target.files[0], "UTF-8");
+        fileReader.onload = function (e) {
+          try {
+            const imported = JSON.parse(e.target.result);
+            if (imported.cities) {
+              imported.cities.forEach(c => {
+                const sc = sanitizeCityName(c);
+                if (!cities.includes(sc)) cities.push(sc);
+              });
+            }
+            if (imported.categories) {
+              imported.categories.forEach(cat => { if (!categories.includes(cat)) categories.push(cat); });
+            }
+            if (imported.catalogPlaces) {
+              imported.catalogPlaces.forEach(p => { if (!catalogPlaces.some(cp => cp.id === p.id)) catalogPlaces.push(p); });
+            }
+            if (imported.days && Array.isArray(imported.days)) {
+              imported.days.forEach(d => {
+                days.push({ ...d, id: 'day-merged-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5), title: `[Birleşen] ${d.title}` });
+              });
+            }
+            renderCityTabs();
+            renderCatalog();
+            renderDays();
+            saveToLocalStorage();
+            migrateLegacyTags(); renderCatalog(); renderDays(); saveToLocalStorage();
+            alert("Tur dosyası başarıyla birleştirildi!");
+          } catch (err) {
+            alert("Birleştirme hatası!");
+          }
+        };
+      }
+    }
+
+    function downloadPrintableReport() {
+      if (days.length === 0) {
+        alert("Rapor oluşturulacak gün bulunmuyor.");
+        return;
+      }
+
+      let totalMins = 0, totalKm = 0, totalTransitMins = 0, totalWalkingMins = 0;
+      let usedCities = [];
+
+      days.forEach(d => {
+        d.places.forEach(p => {
+          totalMins += parseInt(p.duration || 0);
+          if (p.city && !usedCities.includes(p.city)) usedCities.push(p.city);
+        });
+        if (d.transits) {
+          d.transits.forEach(t => {
+            if (!t.isWalkingOnly) {
+              totalKm += parseInt(t.km || 0);
+              totalTransitMins += parseInt(t.min || 0);
+              totalMins += parseInt(t.min || 0);
+            }
+            totalWalkingMins += parseInt(t.walkMin || 0);
+            totalMins += parseInt(t.walkMin || 0);
+          });
+        }
+      });
+
+      const totalHours = Math.floor(totalMins / 60);
+      const remainMins = totalMins % 60;
+      const tourTitle = document.getElementById('main-tour-title').value || "Tur Rota Raporu";
+
+      const reportHtml = `
+        <!DOCTYPE html>
+        <html lang="tr">
+        <head>
+          <meta charset="UTF-8">
+          <title>${tourTitle} - Rota Raporu</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #000; max-width: 800px; margin: 0 auto; line-height: 1.5; }
+            .header { border-bottom: 2px solid #1D4ED8; padding-bottom: 20px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-start; }
+            .title { font-size: 22px; font-weight: 700; color: #1D4ED8; margin: 0; }
+            .summary { background: #EFF6FF; border: 1px solid #BFDBFE; padding: 15px; border-radius: 6px; margin-bottom: 25px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 12px; text-align: center; }
+            .day-container { margin-bottom: 25px; }
+            .day-title { font-size: 15px; font-weight: 700; color: #1D4ED8; border-bottom: 1px solid #E5E7EB; padding-bottom: 6px; margin-bottom: 12px; }
+            .place-item { margin: 8px 0; padding: 12px; border: 1px solid #E5E7EB; background: #FFF; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+            .print-btn { background: #1D4ED8; color: white; border: none; padding: 10px 20px; font-weight: 600; border-radius: 6px; cursor: pointer; margin-bottom: 25px; }
+            @media print { .print-btn { display: none; } }
+          </style>
+        </head>
+        <body>
+          <button onclick="window.print()" class="print-btn">🖨️ YAZDIR / PDF OLARAK KAYDET</button>
+          <div class="header">
+            <div>
+              <h1 class="title">${tourTitle}</h1>
+              <div style="font-size: 13px; color: #DC2626; margin-top: 3px;"><strong>Şehirler:</strong> ${usedCities.join(' • ')}</div>
+            </div>
+            <div style="font-size: 12px;">Tarih: ${new Date().toLocaleDateString('tr-TR')}</div>
+          </div>
+          <div class="summary">
+            <div><strong>Süre:</strong><br>${totalHours} sa ${remainMins} dk</div>
+            <div><strong>Araç Yolu:</strong><br>${totalKm} km</div>
+            <div><strong>Yürüyüş:</strong><br>${totalWalkingMins} dk</div>
+            <div><strong>Gün:</strong><br>${days.length} Gün</div>
+          </div>
+          ${days.map((d, dIdx) => {
+            const times = calculateDayTimes(d);
+            return `
+              <div class="day-container">
+                <div class="day-title"><span>${dIdx + 1}. GÜN: ${d.title}</span></div>
+                ${d.places.map((p, pIdx) => {
+                  const tagText = p.category ? (p.category.startsWith('#') ? p.category : '#' + p.category) : '';
+                  const styleInfo = getPlaceStyleInfo(tagText, p.name);
+                  return `
+                    <div class="place-item">
+                      <div>
+                        <strong>${styleInfo.badgeText}${p.name}</strong> ${tagText ? `<span>(${tagText})</span>` : ''} <span style="font-size:11px; color:#4B5563;">(${p.city})</span>
+                        ${p.tip ? `<div style="font-size:11px; color:#6B7280; margin-top:2px;">${p.tip}</div>` : ''}
+                      </div>
+                      <div style="font-weight:700; color:#1D4ED8; font-size:11px; background:#EFF6FF; padding:4px 8px; border-radius:4px;">Saat: ${times[pIdx]}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `;
+          }).join('')}
+        </body>
+        </html>
+      `;
+
+      const blob = new Blob([reportHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tourTitle.replace(/\s+/g, '_')}_Rotasi.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "Rota81 — Türkiye Tur ve Rota Planlayıcı",
+  "description": "81 il için kategorize edilmiş başlıca gezi noktaları kataloğu ve hızlı Gemini AI asistanı ile çok günlü tur programı oluşturucu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

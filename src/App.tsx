@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Route, X } from 'lucide-react';
+import { LogOut, Route, X } from 'lucide-react';
+import type { Session } from '@supabase/supabase-js';
 import {
   ActiveWorkspaceView,
   AiGeneratedStop,
@@ -34,27 +35,16 @@ import { AiGuideModal } from './components/AiGuideModal';
 import { CustomPlaceModal } from './components/CustomPlaceModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { ReportPreviewView } from './components/ReportPreviewView';
+import { CloudAccess } from './components/CloudAccess';
+import { isCloudConfigured, loadPlannerState, savePlannerState, supabase } from './utils/supabase';
+import type { PersistedPlannerState } from './types/persistence';
 
 const STORAGE_KEY = 'rota81_planner_state_v1';
 const EXPORT_VERSION = 2;
 const VIEW_KEY = 'rota81_active_view_v1';
 const VALID_VIEWS = ['planner', 'ai-wizard', 'turkey-atlas', 'report'];
 
-interface PersistedState {
-  tourTitle: string;
-  days: TourDay[];
-  activeDayId: string | null;
-  activeRegion: RegionName | 'Tümü';
-  activeCity: string;
-  activeCategory: string;
-  customPlaces: Place[];
-  editedPlaces: Record<string, Place>;
-  deletedPlaceIds: string[];
-  customCities: string[];
-  savedTemplates: SavedTemplate[];
-  /** Katalog dosyası (catalog-data/<şehir>.json) henüz güncellenmemiş şehirler */
-  dirtyCities: string[];
-}
+type PersistedState = PersistedPlannerState;
 
 const INITIAL_CITY_BY_ID = new Map<string, string>(
   INITIAL_TURKEY_CATALOG.map((p) => [p.id, p.city])
@@ -185,7 +175,71 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 export default function App() {
   const [state, setState] = useState<PersistedState>(loadInitialState);
+  const stateRef = useRef(state);
+  const saveErrorShownRef = useRef(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [activeView, setActiveView] = useState<ActiveWorkspaceView>(loadInitialView);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(isCloudConfigured);
+  const [cloudReady, setCloudReady] = useState(!isCloudConfigured);
+  const [cloudLoadError, setCloudLoadError] = useState('');
+  const [cloudSaveStatus, setCloudSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [cloudLoadAttempt, setCloudLoadAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) setCloudLoadError(error.message);
+      setSession(data.session);
+      setAuthLoading(false);
+    }).catch((error: unknown) => {
+      if (!mounted) return;
+      setCloudLoadError(error instanceof Error ? error.message : 'Oturum kontrol edilemedi.');
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setCloudLoadError('');
+      if (!nextSession) setCloudReady(false);
+    });
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !session) {
+      setCloudReady(false);
+      return;
+    }
+    let cancelled = false;
+    setCloudReady(false);
+    setCloudLoadError('');
+    loadPlannerState(session.user.id).then(async (remoteState) => {
+      if (cancelled) return;
+      if (remoteState) {
+        const normalized = { ...remoteState, dirtyCities: [] } as PersistedState;
+        setState(normalized);
+        saveStateToStorage(normalized);
+      } else {
+        // First login: migrate this browser's existing planner data to the cloud.
+        await savePlannerState(session.user.id, { ...stateRef.current, dirtyCities: [] });
+      }
+      if (!cancelled) {
+        setCloudSaveStatus('saved');
+        setCloudReady(true);
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setCloudLoadError(error instanceof Error ? error.message : 'Bulut kaydı yüklenemedi.');
+        setCloudReady(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [session?.user.id, cloudLoadAttempt]);
 
   // Modals & transient UI states
   const [guideTarget, setGuideTarget] = useState<{ placeName: string; city: string } | null>(
@@ -218,12 +272,8 @@ export default function App() {
     };
   }, []);
 
-  // ---- Otomatik kayıt ----
-  const stateRef = useRef(state);
-  const saveErrorShownRef = useRef(false);
-  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-
-  // Her değişiklikte anında kaydet
+  // Save locally immediately and debounce a complete cloud sync.
+  const cloudErrorShownRef = useRef(false);
   useEffect(() => {
     stateRef.current = state;
     const ok = saveStateToStorage(state);
@@ -232,12 +282,32 @@ export default function App() {
       setLastSavedAt(new Date());
     } else if (!saveErrorShownRef.current) {
       saveErrorShownRef.current = true;
-      showToast(
-        'Otomatik kayıt yapılamadı (tarayıcı depolama alanı dolu veya kapalı). Lütfen "Arşivle (.json)" ile yedek alın.'
-      );
+      showToast('Otomatik kayıt yapılamadı. Lütfen "Arşivle (.json)" ile yedek alın.');
     }
-  }, [state]);
 
+    if (!supabase || !session || !cloudReady) return;
+    const snapshot: PersistedState = { ...state, dirtyCities: [] };
+    const timer = window.setTimeout(async () => {
+      setCloudSaveStatus('saving');
+      try {
+        await savePlannerState(session.user.id, snapshot);
+        setCloudSaveStatus('saved');
+        cloudErrorShownRef.current = false;
+        if (state.dirtyCities.length > 0) {
+          setState((prev) => prev.dirtyCities.length ? { ...prev, dirtyCities: [] } : prev);
+        }
+      } catch (error) {
+        setCloudSaveStatus('error');
+        if (!cloudErrorShownRef.current) {
+          cloudErrorShownRef.current = true;
+          showToast(error instanceof Error
+            ? `Buluta kaydedilemedi: ${error.message}. Bağlantıyı kontrol edip Kaydet'e basın.`
+            : 'Buluta kaydedilemedi. Bağlantıyı kontrol edip Kaydet\'e basın.');
+        }
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [state, session?.user.id, cloudReady]);
   // Sekme kapanırken / arka plana giderken son durumu garantiye al
   useEffect(() => {
     const flush = () => {
@@ -739,6 +809,24 @@ export default function App() {
   const savingCatalogRef = useRef(false);
 
   async function handleManualSave() {
+    if (supabase && session) {
+      if (!cloudReady) {
+        showToast('Bulut kaydı henüz hazır değil. Biraz bekleyip tekrar deneyin.');
+        return;
+      }
+      try {
+        const snapshot = { ...stateRef.current, dirtyCities: [] };
+        await savePlannerState(session.user.id, snapshot);
+        setState((prev) => prev.dirtyCities.length ? { ...prev, dirtyCities: [] } : prev);
+        setCloudSaveStatus('saved');
+        setLastSavedAt(new Date());
+        showToast('Tüm bilgiler hesabınıza güvenli biçimde kaydedildi.');
+      } catch (error) {
+        setCloudSaveStatus('error');
+        showToast(error instanceof Error ? `Buluta kaydedilemedi: ${error.message}` : 'Buluta kaydedilemedi. Tekrar deneyin.');
+      }
+      return;
+    }
     // 1) Tarayıcıdaki çalışma kaydı
     const localOk = saveStateToStorage(stateRef.current);
     if (localOk) setLastSavedAt(new Date());
@@ -1064,6 +1152,27 @@ export default function App() {
     showToast('Yazdırılabilir rapor (.html) indirildi.');
   }
 
+  if (isCloudConfigured && authLoading) {
+    return <main className="min-h-screen flex items-center justify-center bg-stone-50 text-sm text-slate-600">Bulut hesabınız kontrol ediliyor…</main>;
+  }
+  if (isCloudConfigured && !session) return <CloudAccess />;
+  if (isCloudConfigured && session && !cloudReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-stone-50 p-4 text-slate-900">
+        <section className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-7 shadow-xl">
+          <h1 className="text-lg font-bold">Kayıtlarınız yükleniyor</h1>
+          {cloudLoadError ? (
+            <>
+              <p className="mt-3 text-sm leading-6 text-rose-700">{cloudLoadError}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Verilerinizin üzerine yazmamak için kayıtlar yüklenene kadar uygulamayı açmadık. Supabase SQL kurulumunun tamamlandığını ve internet bağlantısını kontrol edin.</p>
+              <button type="button" onClick={() => setCloudLoadAttempt((n) => n + 1)} className="mt-5 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Tekrar dene</button>
+            </>
+          ) : <p className="mt-2 text-sm text-slate-600">Mevcut kayıtlar güvenle eşitleniyor…</p>}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 text-slate-900">
       <TopNav
@@ -1089,7 +1198,7 @@ export default function App() {
       )}
 
       {/* Otomatik kayıt göstergesi */}
-      {(lastSavedAt || savingCatalog || state.dirtyCities.length > 0) && (
+      {(lastSavedAt || savingCatalog || state.dirtyCities.length > 0 || isCloudConfigured) && (
         <div className="fixed bottom-5 left-5 z-40 max-w-[420px] text-[11px] text-slate-500 bg-white/90 border border-slate-200 rounded-md px-2.5 py-1 shadow-sm no-print space-y-0.5">
           {lastSavedAt && (
             <div>
@@ -1100,6 +1209,19 @@ export default function App() {
                 second: '2-digit',
               })}
             </div>
+          )}
+          {isCloudConfigured && session && (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-1">
+              <span className={cloudSaveStatus === 'error' ? 'text-rose-700' : cloudSaveStatus === 'saving' ? 'text-amber-700' : 'text-emerald-700'}>
+                {cloudSaveStatus === 'saving' ? 'Buluta kaydediliyor…' : cloudSaveStatus === 'error' ? 'Bulut kaydı başarısız' : cloudSaveStatus === 'saved' ? 'Buluta kaydedildi' : 'Bulut senkronizasyonu etkin'}
+              </span>
+              <button type="button" onClick={() => { void supabase?.auth.signOut(); }} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900" title={session.user.email || 'Oturumu kapat'}>
+                <LogOut className="h-3 w-3" /> Çıkış
+              </button>
+            </div>
+          )}
+          {!isCloudConfigured && (
+            <div className="text-amber-800">Yalnızca bu tarayıcıya kaydediliyor; bulut için Supabase ayarları gerekli.</div>
           )}
           {savingCatalog && (
             <div className="text-amber-700">Katalog şehir şehir kaydediliyor…</div>

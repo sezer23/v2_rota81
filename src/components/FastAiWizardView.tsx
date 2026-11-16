@@ -390,7 +390,7 @@ export function FastAiWizardView({
               4. Odak Kategoriler
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {CATEGORY_DEFINITIONS.filter((c) => c.tag !== '#otel').map((cat) => {
+              {CATEGORY_DEFINITIONS.filter((c) => c.tag !== '#konaklama').map((cat) => {
                 const active = selectedCats.includes(cat.tag);
                 return (
                   <button

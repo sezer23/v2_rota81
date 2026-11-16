@@ -5,7 +5,6 @@ import {
   ActiveWorkspaceView,
   AiGeneratedStop,
   AiGuideNote,
-  AiWizardResponse,
   Place,
   RegionName,
   TourDay,
@@ -16,7 +15,6 @@ import {
   INITIAL_TURKEY_CATALOG,
   PROVINCE_BY_NAME,
   PROVINCES_81,
-  QuickPresetRoute,
 } from './data/turkeyCatalog';
 import {
   buildDayTransits,
@@ -25,12 +23,11 @@ import {
   recalculateAllDayTransits,
   sanitizeCityName,
 } from './utils/geoAndTime';
-import { getAiHeaders, getStoredApiKey } from './utils/aiApi';
+import { getStoredApiKey } from './utils/aiApi';
 import { fetchServerCatalog, saveCityCatalog } from './utils/catalogClient';
 import { TopNav } from './components/TopNav';
 import { CatalogPanel } from './components/CatalogPanel';
 import { ItineraryBoard, type SavedTemplate } from './components/ItineraryBoard';
-import { FastAiWizardView } from './components/FastAiWizardView';
 import { AiGuideModal } from './components/AiGuideModal';
 import { CustomPlaceModal } from './components/CustomPlaceModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
@@ -42,7 +39,7 @@ import type { PersistedPlannerState } from './types/persistence';
 const STORAGE_KEY = 'rota81_planner_state_v1';
 const EXPORT_VERSION = 2;
 const VIEW_KEY = 'rota81_active_view_v1';
-const VALID_VIEWS = ['planner', 'ai-wizard', 'turkey-atlas', 'report'];
+const VALID_VIEWS = ['planner', 'turkey-atlas', 'report'];
 
 type PersistedState = PersistedPlannerState;
 
@@ -255,7 +252,6 @@ export default function App() {
     roadKm: number;
     driveMins: number;
   } | null>(null);
-  const [quickPresetLoadingId, setQuickPresetLoadingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Sunucuda (catalog-data/<şehir>.json) şehir şehir kayıtlı kataloglar
@@ -719,89 +715,6 @@ export default function App() {
       }),
     }));
     showToast(`"${stop.name}" güne eklendi.`);
-  }
-
-  function convertWizardResultToDays(result: AiWizardResponse): TourDay[] {
-    return result.days.map((genDay, dIdx) => {
-      const customTimes: Record<number, string> = {};
-      const places: Place[] = genDay.stops.map((s, sIdx) => {
-        const cleanCity = sanitizeCityName(s.city);
-        if (sIdx === 0 && s.startTime && /^\d{2}:\d{2}$/.test(s.startTime)) {
-          customTimes[0] = s.startTime;
-        }
-        return {
-          id: `ai-gen-${Date.now()}-${dIdx}-${sIdx}`,
-          name: s.name,
-          city: cleanCity,
-          region: PROVINCE_BY_NAME[cleanCity]?.region,
-          category: normalizeTag(s.category) || '#tarih',
-          duration: Math.max(0, Number(s.duration) || 60),
-          tip: s.tip || '',
-          lat: Number(s.lat) || PROVINCE_BY_NAME[cleanCity]?.lat || 39.0,
-          lng: Number(s.lng) || PROVINCE_BY_NAME[cleanCity]?.lng || 35.0,
-        };
-      });
-
-      return {
-        id: `day-ai-${Date.now()}-${dIdx}`,
-        title: genDay.title,
-        places,
-        transits: recalculateAllDayTransits(places),
-        customTimes,
-      };
-    });
-  }
-
-  function handleApplyGeneratedTour(result: AiWizardResponse, appendMode: boolean) {
-    const generatedDays = convertWizardResultToDays(result);
-    if (generatedDays.length === 0) return;
-
-    setState((prev) => ({
-      ...prev,
-      tourTitle: appendMode && prev.tourTitle ? prev.tourTitle : result.tourTitle,
-      days: appendMode ? [...prev.days, ...generatedDays] : generatedDays,
-      activeDayId: generatedDays[0].id,
-    }));
-    setActiveView('planner');
-    showToast(`"${result.tourTitle}" (${generatedDays.length} gün) programa aktarıldı.`);
-  }
-
-  async function handleRunQuickPreset(preset: QuickPresetRoute) {
-    setQuickPresetLoadingId(preset.id);
-    try {
-      const catalogSample = catalogPlaces
-        .filter((p) => preset.cities.includes(p.city))
-        .map((p) => ({
-          name: p.name,
-          city: p.city,
-          category: p.category,
-          duration: p.duration,
-          lat: p.lat,
-          lng: p.lng,
-          tip: p.tip,
-        }));
-
-      const res = await fetch('/api/ai/generate-itinerary', {
-        method: 'POST',
-        headers: getAiHeaders(),
-        body: JSON.stringify({
-          cities: preset.cities,
-          dayCount: preset.dayCount,
-          tempo: preset.tempo,
-          categories: preset.categories,
-          notes: preset.notes,
-          catalogSample,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Şablon oluşturulamadı.');
-
-      handleApplyGeneratedTour(data as AiWizardResponse, false);
-    } catch (err) {
-      showToast((err as Error).message || 'AI rota üretimi başarısız oldu.');
-    } finally {
-      setQuickPresetLoadingId(null);
-    }
   }
 
   // ---- Kaydet butonu (ve Ctrl+S) ----
@@ -1389,9 +1302,6 @@ export default function App() {
                   }))
                 }
                 onOpenAiGuide={(placeName, city) => setGuideTarget({ placeName, city })}
-                onOpenAiWizard={() => setActiveView('ai-wizard')}
-                onRunQuickPreset={handleRunQuickPreset}
-                quickPresetLoadingId={quickPresetLoadingId}
                 onExportJson={handleExportJson}
                 onImportJson={handleImportJson}
                 onMergeJson={handleMergeJson}
@@ -1407,15 +1317,6 @@ export default function App() {
               />
             </div>
           </div>
-        )}
-
-        {activeView === 'ai-wizard' && (
-          <FastAiWizardView
-            catalogPlaces={catalogPlaces}
-            currentDays={state.days}
-            tourTitle={state.tourTitle}
-            onApplyGeneratedTour={handleApplyGeneratedTour}
-          />
         )}
 
         {activeView === 'turkey-atlas' && (

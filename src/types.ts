@@ -137,7 +137,7 @@ export interface AiWizardResponse {
   elapsedMs?: number;
 }
 
-export type ActiveWorkspaceView = 'planner' | 'ai-wizard' | 'turkey-atlas' | 'report';
+export type ActiveWorkspaceView = 'planner' | 'turkey-atlas' | 'report';
 // DOSYA: src/types.ts
 
 export type LogisticsCategory = 'LOGISTICS_FLIGHT' | 'LOGISTICS_TRANSFER';

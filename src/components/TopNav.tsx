@@ -19,7 +19,6 @@ export function TopNav({
 }: TopNavProps) {
   const navItems: Array<{ id: ActiveWorkspaceView; label: string }> = [
     { id: 'planner', label: 'Planlayıcı' },
-    { id: 'ai-wizard', label: 'Hızlı AI Sihirbazı' },
     { id: 'turkey-atlas', label: '81 İl Kataloğu' },
     { id: 'report', label: 'Rapor & Çıktı' },
   ];

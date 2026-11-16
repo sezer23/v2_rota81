@@ -9,10 +9,8 @@ import {
   FileText,
   GitMerge,
   GripVertical,
-  Loader2,
   Plus,
   RotateCcw,
-  Sparkles,
   Trash2,
   Upload,
   Wand2,
@@ -32,7 +30,6 @@ import {
   calculatePairDistance,
   formatHoursMins,
 } from '../utils/geoAndTime';
-import { QUICK_AI_PRESETS, QuickPresetRoute } from '../data/turkeyCatalog';
 
 // Standart ve ulaşım kategorileri listesi
 const AVAILABLE_CATEGORIES = [
@@ -124,9 +121,6 @@ interface ItineraryBoardProps {
   onDropCatalogPlaceOnDay: (catalogPlaceId: string, toDayId: string, toIdx?: number) => void;
   onUpdateTransit: (dayId: string, idx: number, patch: Partial<TransitInfo>) => void;
   onOpenAiGuide: (placeName: string, city: string) => void;
-  onOpenAiWizard: () => void;
-  onRunQuickPreset: (preset: QuickPresetRoute) => Promise<void>;
-  quickPresetLoadingId: string | null;
   onExportJson: () => void;
   onImportJson: (file: File) => void;
   onMergeJson: (file: File) => void;
@@ -168,9 +162,6 @@ export function ItineraryBoard({
   onDropCatalogPlaceOnDay,
   onUpdateTransit,
   onOpenAiGuide,
-  onOpenAiWizard,
-  onRunQuickPreset,
-  quickPresetLoadingId,
   onExportJson,
   onImportJson,
   onMergeJson,
@@ -404,20 +395,11 @@ export function ItineraryBoard({
             <div className="text-xs text-slate-500 mt-1">
               {summary.usedCities.length > 0
                 ? summary.usedCities.join(' · ')
-                : 'Soldaki 81 il kataloğundan durak ekleyin veya Hızlı AI Sihirbazı ile saniyeler içinde program oluşturun.'}
+                : '81 İl Kataloğundan durak ekleyin.'}
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={onOpenAiWizard}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
-            >
-              <Wand2 className="w-3.5 h-3.5" />
-              <span>Hızlı AI Rota Oluştur</span>
-            </button>
-
             <button
               type="button"
               onClick={onAddNewDay}
@@ -603,30 +585,6 @@ export function ItineraryBoard({
           </div>
         </div>
 
-        {/* Quick AI Presets Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar text-xs">
-          <span className="text-slate-500 font-medium whitespace-nowrap shrink-0 flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            Tek Tıkla AI Şablonu:
-          </span>
-          {QUICK_AI_PRESETS.map((preset) => {
-            const loading = quickPresetLoadingId === preset.id;
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                disabled={Boolean(quickPresetLoadingId)}
-                onClick={() => onRunQuickPreset(preset)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 font-medium text-slate-700 bg-stone-100 hover:bg-amber-50 hover:text-amber-900 border border-slate-200/80 rounded-md transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
-              >
-                {loading && <Loader2 className="w-3 h-3 animate-spin text-amber-600" />}
-                <span>{preset.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Kayıtlı Şablonlarım */}
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar">
             <span className="text-slate-500 font-medium whitespace-nowrap shrink-0 flex items-center gap-1">
@@ -761,28 +719,9 @@ export function ItineraryBoard({
             <h3 className="font-display text-base font-bold text-slate-900">
               Gezi Programınız Henüz Boş
             </h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Soldaki 81 İl Türkiye Kataloğundan istediğiniz şehri seçip durakları tek tıkla ekleyebilir veya Hızlı AI Sihirbazına şehir ve gün sayısını söyleyerek tüm rotayı 2 saniyede kurdurabilirsiniz.
-            </p>
+            <p className="text-xs text-slate-500 leading-relaxed">Soldaki 81 İl Kataloğundan durak seçip turunuzu oluşturabilirsiniz.</p>
           </div>
-          <div className="flex items-center justify-center gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onOpenAiWizard}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors"
-            >
-              <Wand2 className="w-3.5 h-3.5" />
-              <span>AI ile Otomatik Program Kur</span>
-            </button>
-            <button
-              type="button"
-              onClick={onAddNewDay}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-800 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Günü Manuel Başlat</span>
-            </button>
-          </div>
+
         </div>
       ) : (
         <div className="space-y-4">

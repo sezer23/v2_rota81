@@ -12,6 +12,8 @@ interface AiGuideModalProps {
   address?: string | null;      // Açık adres
   lat?: number | null;
   lng?: number | null;
+  initialGuide?: AiGuideNote | null;
+  onSaveGuide?: (note: AiGuideNote) => void;
   onClose: () => void;
 }
 
@@ -43,6 +45,8 @@ export function AiGuideModal({
   address,
   lat,
   lng,
+  initialGuide,
+  onSaveGuide,
   onClose,
 }: AiGuideModalProps) {
   const [note, setNote] = useState<AiGuideNote | null>(null);
@@ -104,6 +108,14 @@ export function AiGuideModal({
     const targetKey = cacheKey;
 
     if (!bypassCache) {
+      if (initialGuide) {
+        setNote(initialGuide);
+        setOriginalNote(initialGuide);
+        initEditableFields(initialGuide);
+        setFromCache(true);
+        setLoading(false);
+        return;
+      }
       const cached = readGuideCache()[targetKey];
       if (cached) {
         setNote(cached);
@@ -134,6 +146,9 @@ export function AiGuideModal({
 
       const result = data as AiGuideNote;
       writeGuideCache(targetKey, result);
+      if (onSaveGuide) {
+        onSaveGuide(result);
+      }
 
       if (cacheKey === targetKey) {
         setNote(result);
@@ -179,6 +194,9 @@ export function AiGuideModal({
     };
     setNote(updatedNote);
     writeGuideCache(cacheKey, updatedNote);
+    if (onSaveGuide) {
+      onSaveGuide(updatedNote);
+    }
     setIsEditing(false);
   }
 
@@ -194,14 +212,21 @@ export function AiGuideModal({
     setIsEditing(false);
 
     if (placeName && city) {
-      const cached = readGuideCache()[cacheKey];
-      if (cached) {
-        setNote(cached);
-        setOriginalNote(cached);
-        initEditableFields(cached);
+      if (initialGuide) {
+        setNote(initialGuide);
+        setOriginalNote(initialGuide);
+        initEditableFields(initialGuide);
         setFromCache(true);
       } else {
-        initEmptyGuide();
+        const cached = readGuideCache()[cacheKey];
+        if (cached) {
+          setNote(cached);
+          setOriginalNote(cached);
+          initEditableFields(cached);
+          setFromCache(true);
+        } else {
+          initEmptyGuide();
+        }
       }
       setLoading(false);
       setError(null);
@@ -217,7 +242,7 @@ export function AiGuideModal({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placeName, city]);
+  }, [placeName, city, initialGuide]);
 
   if (!placeName || !city) return null;
 
@@ -245,6 +270,9 @@ export function AiGuideModal({
                     setNote(originalNote);
                     initEditableFields(originalNote);
                     writeGuideCache(cacheKey, originalNote);
+                    if (onSaveGuide) {
+                      onSaveGuide(originalNote);
+                    }
                     setIsEditing(false);
                   }
                 }}

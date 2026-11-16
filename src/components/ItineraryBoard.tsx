@@ -29,6 +29,7 @@ import { getCategoryLabel, isAccommodationPlace } from '../data/categories';
 import {
   calculateDayTimes,
   calculateItinerarySummary,
+  calculatePairDistance,
   formatHoursMins,
 } from '../utils/geoAndTime';
 import { QUICK_AI_PRESETS, QuickPresetRoute } from '../data/turkeyCatalog';
@@ -48,6 +49,53 @@ const AVAILABLE_CATEGORIES = [
 ];
 
 const DRAFT_KEY = 'rota81_manual_drafts_v1';
+
+/**
+ * Durakları en yakın komşu mantığıyla sıralar (internet / AI gerektirmez, anında çalışır).
+ * İlk ve son durak ile koordinatı olmayan duraklar (uçuş, not vb.) yerinde kalır.
+ */
+function optimizeStopOrder(places: Place[]): string[] {
+  const n = places.length;
+  const hasXY = (p: Place) => Boolean(Number(p.lat) && Number(p.lng));
+  if (n < 3) return places.map((p) => p.id);
+
+  const result: Array<Place | null> = new Array(n).fill(null);
+  result[0] = places[0];
+  result[n - 1] = places[n - 1];
+
+  const movable: Place[] = [];
+  for (let i = 1; i < n - 1; i++) {
+    if (hasXY(places[i])) movable.push(places[i]);
+    else result[i] = places[i]; // koordinatsız durak yerinde kalır
+  }
+
+  const sorted: Place[] = [];
+  let current: Place | null = hasXY(places[0]) ? places[0] : null;
+  const pool = [...movable];
+  while (pool.length > 0) {
+    let nearest = 0;
+    if (current) {
+      let best = Infinity;
+      pool.forEach((p, idx) => {
+        const d = calculatePairDistance(current as Place, p).roadKm;
+        if (d < best) {
+          best = d;
+          nearest = idx;
+        }
+      });
+    }
+    current = pool[nearest];
+    sorted.push(current);
+    pool.splice(nearest, 1);
+  }
+
+  // Sıralanan duraklar, boş (koordinatlı) yerlere sırayla yerleştirilir
+  let k = 0;
+  for (let i = 1; i < n - 1; i++) {
+    if (result[i] === null) result[i] = sorted[k++];
+  }
+  return (result as Place[]).map((p) => p.id);
+}
 
 export interface SavedTemplate {
   id: string;
@@ -127,6 +175,7 @@ export function ItineraryBoard({
   onImportJson,
   onMergeJson,
   onDownloadReport,
+  onApplyOptimizedDay,
   onAddSuggestedStopToDay,
   onSave,
   savedTemplates,
@@ -200,6 +249,21 @@ export function ItineraryBoard({
         // ignore
       }
     }
+  }
+
+  function handleOptimizeDay(day: TourDay) {
+    if (day.places.length < 3) {
+      onNotify('Sıralama için günde en az 3 durak olmalı (ilk ve son durak sabit kalır).');
+      return;
+    }
+    const orderedIds = optimizeStopOrder(day.places);
+    if (orderedIds.join('|') === day.places.map((p) => p.id).join('|')) {
+      onNotify('Duraklar zaten en yakın komşu sırasında.');
+      return;
+    }
+    // İlk durağın elle girilmiş başlangıç saati korunur
+    onApplyOptimizedDay(day.id, orderedIds, [day.customTimes?.[0] || '']);
+    onNotify('Duraklar coğrafi yakınlığa göre sıralandı (ilk ve son durak sabit).');
   }
 
   function handleGuideOrAiClick(place: Place) {
@@ -810,6 +874,16 @@ export function ItineraryBoard({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleOptimizeDay(day)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 font-medium text-slate-700 bg-white hover:bg-amber-50 hover:text-amber-900 border border-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                      title="Durakları coğrafi yakınlığa göre sırala (ilk ve son durak sabit)"
+                    >
+                      <Wand2 className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Sırayı Optimize Et</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleToggleManualForm(day.id)}
